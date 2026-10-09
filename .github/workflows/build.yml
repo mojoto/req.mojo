@@ -1,0 +1,147 @@
+name: Build and Release
+
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ inputs.tag || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Package (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: macos-26
+            platform: macos-arm64
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential libcurl4-openssl-dev openssl
+
+      - name: Install Pixi environment
+        uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+        with:
+          pixi-version: v0.78.0
+          locked: true
+
+      - name: Determine package version
+        id: package
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ -n "${RELEASE_TAG}" ]]; then
+            version="${RELEASE_TAG#v}"
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version=$(pixi run python -c 'import tomllib; print(tomllib.load(open("pixi.toml", "rb"))["workspace"]["version"])')
+          fi
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          mojo_version=$(pixi run python -c 'import tomllib; print(tomllib.load(open("pixi.toml", "rb"))["dependencies"]["mojo"].removeprefix("=="))')
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "mojo_version=${mojo_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Test and precompile package
+        run: make test build
+
+      - name: Verify precompiled package
+        shell: bash
+        run: |
+          trap 'rm -f build/package-smoke.mojo .req-test-package' EXIT
+          cat > build/package-smoke.mojo <<'MOJO'
+          from std.testing import assert_equal
+          from req import Client, JSONValue
+
+
+          def main() raises:
+              assert_equal(JSONValue.parse('{"value":42}')["value"].int_value(), 42)
+              var client = Client()
+              client.close()
+          MOJO
+          pixi run mojo build --Werror -I build \
+            -Xlinker build/libreq_curl.a -Xlinker -lcurl \
+            build/package-smoke.mojo -o .req-test-package
+          ./.req-test-package
+
+      - name: Create release archive
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+          MOJO_VERSION: ${{ steps.package.outputs.mojo_version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          archive="req-${PACKAGE_VERSION}-mojo-${MOJO_VERSION}-${PLATFORM}"
+          mkdir -p "build/dist/${archive}"
+          cp build/req.mojoc build/libreq_curl.a LICENSE README.md pixi.toml pixi.lock "build/dist/${archive}/"
+          tar -czf "build/dist/${archive}.tar.gz" -C build/dist "${archive}"
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-${{ matrix.platform }}
+          path: build/dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum *.tar.gz > SHA256SUMS
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" release-assets/* --clobber
+          else
+            gh release create "${RELEASE_TAG}" release-assets/* \
+              --verify-tag \
+              --generate-notes \
+              --title "Req ${RELEASE_TAG}"
+          fi
