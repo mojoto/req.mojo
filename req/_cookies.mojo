@@ -13,7 +13,11 @@ def _now() -> Float64:
 
 
 def _domain_match(host: String, domain: String) -> Bool:
-    return host == domain or (host.endswith("." + domain) and not (48 <= Int(host.as_bytes()[0]) <= 57))
+    var numeric = True
+    for byte in host.as_bytes():
+        if not (48 <= Int(byte) <= 57 or byte == 46):
+            numeric = False
+    return host == domain or (host.endswith("." + domain) and not numeric)
 
 
 def _expiry(text: String) -> Optional[Float64]:
@@ -21,7 +25,20 @@ def _expiry(text: String) -> Optional[Float64]:
     var fields = text.replace(",", "").split()
     if len(fields) != 6 or String(fields[5]).upper() != "GMT":
         return None
-    var months: List[String] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+    var months: List[String] = [
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "may",
+        "jun",
+        "jul",
+        "aug",
+        "sep",
+        "oct",
+        "nov",
+        "dec",
+    ]
     var month = 0
     for i in range(12):
         if String(fields[2]).lower() == months[i]:
@@ -41,7 +58,9 @@ def _expiry(text: String) -> Optional[Float64]:
         var era = year // 400
         var yoe = year - era * 400
         var doy = (153 * (month + (-3 if month > 2 else 9)) + 2) // 5 + day - 1
-        var days = era * 146097 + yoe * 365 + yoe // 4 - yoe // 100 + doy - 719468
+        var days = (
+            era * 146097 + yoe * 365 + yoe // 4 - yoe // 100 + doy - 719468
+        )
         return Float64(days * 86400 + hour * 3600 + minute * 60 + second)
     except:
         return None
@@ -67,30 +86,61 @@ struct CookieJar(ImplicitlyCopyable):
     def __init__(out self, *, copy: Self):
         self._cookies = copy._cookies.copy()
 
-    def set(mut self, name: String, value: String, *, domain: String, path: String = "/", secure: Bool = False, expires: Optional[Float64] = None, host_only: Bool = False) raises HTTPError:
+    def set(
+        mut self,
+        name: String,
+        value: String,
+        *,
+        domain: String,
+        path: String = "/",
+        secure: Bool = False,
+        expires: Optional[Float64] = None,
+        host_only: Bool = False,
+    ) raises HTTPError:
         var normalized = String(domain.lower().strip("."))
         if not is_token(name) or not normalized or not path.startswith("/"):
-            raise HTTPError(ErrorKind.InvalidRequest, "Invalid cookie name or scope")
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "Invalid cookie name or scope"
+            )
         for char in value.as_bytes():
             if char <= 32 or char >= 127 or Int(char) in [34, 44, 59, 92]:
-                raise HTTPError(ErrorKind.InvalidRequest, "Invalid cookie value")
+                raise HTTPError(
+                    ErrorKind.InvalidRequest, "Invalid cookie value"
+                )
         if expires and not isfinite(expires.value()):
-            raise HTTPError(ErrorKind.InvalidRequest, "Invalid cookie expiration")
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "Invalid cookie expiration"
+            )
         self.delete(name, domain=normalized, path=path)
         if not expires or expires.value() > _now():
-            self._cookies.append(_Cookie(name, value, normalized, path, secure, expires, host_only))
+            self._cookies.append(
+                _Cookie(
+                    name, value, normalized, path, secure, expires, host_only
+                )
+            )
 
-    def get(self, name: String, *, domain: String, path: String = "/") -> Optional[String]:
+    def get(
+        self, name: String, *, domain: String, path: String = "/"
+    ) -> Optional[String]:
         var normalized = String(domain.lower().strip("."))
         for cookie in self._cookies:
-            if cookie.name == name and cookie.domain == normalized and cookie.path == path and (not cookie.expires or cookie.expires.value() > _now()):
+            if (
+                cookie.name == name
+                and cookie.domain == normalized
+                and cookie.path == path
+                and (not cookie.expires or cookie.expires.value() > _now())
+            ):
                 return cookie.value
         return None
 
     def delete(mut self, name: String, *, domain: String, path: String = "/"):
         var remaining = List[_Cookie]()
         for cookie in self._cookies:
-            if not (cookie.name == name and cookie.domain == domain.lower().strip(".") and cookie.path == path):
+            if not (
+                cookie.name == name
+                and cookie.domain == domain.lower().strip(".")
+                and cookie.path == path
+            ):
                 remaining.append(cookie)
         swap(self._cookies, remaining)
 
@@ -100,14 +150,33 @@ struct CookieJar(ImplicitlyCopyable):
     def header(self, url: URL) -> Optional[String]:
         var selected = List[_Cookie]()
         for cookie in self._cookies:
-            var domain_ok = url.host() == cookie.domain if cookie.host_only else _domain_match(url.host(), cookie.domain)
-            var path_ok = url.path() == cookie.path or (url.path().startswith(cookie.path) and (cookie.path.endswith("/") or url.path()[byte=cookie.path.byte_length()] == "/"))
-            if domain_ok and path_ok and (not cookie.secure or url.scheme() == "https") and (not cookie.expires or cookie.expires.value() > _now()):
+            var domain_ok = (
+                url.host()
+                == cookie.domain if cookie.host_only else _domain_match(
+                    url.host(), cookie.domain
+                )
+            )
+            var path_ok = url.path() == cookie.path or (
+                url.path().startswith(cookie.path)
+                and (
+                    cookie.path.endswith("/")
+                    or url.path()[byte=cookie.path.byte_length()] == "/"
+                )
+            )
+            if (
+                domain_ok
+                and path_ok
+                and (not cookie.secure or url.scheme() == "https")
+                and (not cookie.expires or cookie.expires.value() > _now())
+            ):
                 selected.append(cookie)
         # Longer paths precede shorter paths, preserving order within one scope.
         for i in range(len(selected)):
             for j in range(i + 1, len(selected)):
-                if selected[j].path.byte_length() > selected[i].path.byte_length():
+                if (
+                    selected[j].path.byte_length()
+                    > selected[i].path.byte_length()
+                ):
                     var previous = selected[i]
                     selected[i] = selected[j]
                     selected[j] = previous
@@ -137,11 +206,18 @@ struct CookieJar(ImplicitlyCopyable):
             for i in range(1, len(fields)):
                 var attribute = String(fields[i]).strip().split("=", maxsplit=1)
                 var key = String(attribute[0]).lower()
-                var value = String(String(attribute[1]).strip()) if len(attribute) == 2 else String()
+                var value = (
+                    String(String(attribute[1]).strip()) if len(attribute)
+                    == 2 else String()
+                )
                 if key == "domain":
                     domain = String(value.lower().strip("."))
                     host_only = False
-                    valid = Bool(domain) and _domain_match(url.host(), domain) and ("." in domain or domain == url.host())
+                    valid = (
+                        Bool(domain)
+                        and _domain_match(url.host(), domain)
+                        and ("." in domain or domain == url.host())
+                    )
                 elif key == "path" and value.startswith("/"):
                     path = value
                 elif key == "secure":
@@ -157,6 +233,14 @@ struct CookieJar(ImplicitlyCopyable):
                 expires = max_age
             if valid:
                 try:
-                    self.set(String(String(pair[0]).strip()), String(String(pair[1]).strip().strip('"')), domain=domain, path=path, secure=secure, expires=expires, host_only=host_only)
+                    self.set(
+                        String(String(pair[0]).strip()),
+                        String(String(pair[1]).strip().strip('"')),
+                        domain=domain,
+                        path=path,
+                        secure=secure,
+                        expires=expires,
+                        host_only=host_only,
+                    )
                 except:
                     pass
