@@ -46,3 +46,7 @@ jar 没有公共后缀数据库，不是浏览器 Cookie 策略引擎。
 301/302 将 POST 转为 GET，303 将非 HEAD 方法转为 GET，307/308 保留方法和请求体。方法转换时移除请求体相关头。
 
 默认启用 TLS 验证，`ca_file="/path/to/ca.pem"` 可指定自定义 CA。`verify=False` 禁用验证，不能同时指定 CA 文件。
+
+## API 详情
+
+[Client](./api/client.md), [CookieJar](./api/cookies.md), [URL](./api/url.md)

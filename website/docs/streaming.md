@@ -50,3 +50,7 @@ but explicit client closure or client-context exit cancels active streams.
 
 Read or close an active response before issuing another request if you want its
 connection to be available for reuse. Avoid keeping unused responses open.
+
+## API details
+
+[Response](./api/response.md), [Client](./api/client.md)

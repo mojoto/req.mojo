@@ -8,6 +8,21 @@ Use `get`, `head`, `post`, `put`, `patch`, `delete`, or `options`, or
 `request(method, url)` for an explicit method. Module-level calls use isolated
 clients; use a [Client](./clients.md) when you need shared state.
 
+## Choose a request style
+
+| Need | Use |
+| --- | --- |
+| Read a resource or query an endpoint | `get(url, params=...)` |
+| Inspect response headers only | `head(url)` |
+| Submit JSON | `post(url, json=payload)` |
+| Submit form fields | `post(url, data=fields)` |
+| Send file contents or other raw bytes | `request(method, url, content=bytes)` |
+| Share defaults and cookies across requests | [Client](./clients.md) |
+| Process a large response incrementally | [stream()](./streaming.md) |
+
+Helpers return a `Response`. The method specifies request semantics; the server decides the response format. Call `response.json()` explicitly when you need JSON.
+
+
 ## Query parameters and headers
 
 ```mojo
@@ -91,3 +106,11 @@ UTF-8 JSON. Call `raise_for_status()` for HTTP 4xx/5xx errors.
 
 See [streaming](./streaming.md) for unbuffered bodies and [errors](./errors.md)
 for typed failures.
+
+## API details
+
+- [HTTP functions](./api/http.md): complete parameters and defaults for each method.
+- [Response](./api/response.md): metadata, body access, and status handling.
+- [Headers](./api/headers.md) and [QueryParams](./api/query-params.md): repeated values, lookup, and mutation.
+- [JSONValue](./api/json.md): objects, arrays, and typed value access.
+- [Auth](./api/auth.md) and [Timeout](./api/timeout.md): authentication and phase timeouts.
