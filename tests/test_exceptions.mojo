@@ -1,0 +1,26 @@
+from std.testing import TestSuite, assert_equal, assert_true
+from req import HTTPError, ErrorKind
+
+
+def raise_timeout() raises HTTPError:
+    raise HTTPError(ErrorKind.ReadTimeout, "Read timed out", method="GET", url="https://example.com/")
+
+
+def test_typed_error() raises:
+    try:
+        raise_timeout()
+    except error:
+        assert_equal(error.kind, ErrorKind.ReadTimeout)
+        assert_equal(error.method.value(), "GET")
+        assert_equal(error.url.value(), "https://example.com/")
+        assert_true(not error.status_code)
+
+
+def test_status_context() raises:
+    var error = HTTPError(ErrorKind.HTTPStatusError, "HTTP status error", status_code=404)
+    assert_equal(error.status_code.value(), 404)
+    assert_equal(String(error), "HTTPStatusError: HTTP status error")
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()
