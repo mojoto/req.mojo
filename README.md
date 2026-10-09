@@ -63,11 +63,6 @@ Use `read()` to buffer an untouched stream, or `read_chunk()` to consume it
 incrementally. Context exit closes the response. `Client` provides the same
 request methods, plus shared settings, cookies, and connection reuse.
 
-## Documentation
-
-See the [core API contract](docs/core-api.md) and the [examples](examples/) for
-clients, request bodies, authentication, redirects, errors, and resource ownership.
-
 This version supports synchronous HTTP/1.1. Async, HTTP/2, multipart, proxies,
 and automatic retries are outside its scope. Clients are intended for
 single-threaded use. Cookie handling has no public-suffix database and supports
@@ -80,6 +75,7 @@ execution remains unverified.
 pixi run test
 make test TEST_ARGS="--only test_client_requests_and_reuse"
 pixi run format
+make clean
 ```
 
 Tests use local HTTP/TLS fixtures. The runner automatically collects test
