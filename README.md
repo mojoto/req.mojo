@@ -32,8 +32,7 @@ redirects or retries. HTTP 4xx/5xx responses return normally; call
 This version supports synchronous HTTP/1.1. Async, HTTP/2, multipart, proxies,
 and automatic retries are outside its scope. Clients are intended for
 single-threaded use. Cookie handling has no public-suffix database and supports
-IMF-fixdate Expires values. Local validation covers macOS ARM64; Linux x86-64
-execution remains unverified.
+IMF-fixdate Expires values. CI validates Linux x86-64 and macOS ARM64.
 
 ## Installation
 
