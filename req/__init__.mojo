@@ -11,3 +11,4 @@ from ._auth import Auth
 
 from ._cookies import CookieJar
 from ._client import Client
+from ._api import request, stream, get, head, post, put, patch, delete, options
