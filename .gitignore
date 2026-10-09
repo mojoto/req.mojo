@@ -1,7 +1,10 @@
 .venv/
+.pixi/
 .serena/
 .deps/
 build/
 *.mojoc
 __pycache__/
 .DS_Store
+.req-test-*
+.req-example-*
