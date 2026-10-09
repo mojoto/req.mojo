@@ -101,7 +101,7 @@ jobs:
           archive="req-${PACKAGE_VERSION}-mojo-${MOJO_VERSION}-${PLATFORM}"
           mkdir -p "build/dist/${archive}"
           cp build/req.mojoc build/libreq_curl.a LICENSE README.md pixi.toml pixi.lock "build/dist/${archive}/"
-          tar -czf "build/dist/${archive}.tar.gz" -C build/dist "${archive}"
+          COPYFILE_DISABLE=1 tar -czf "build/dist/${archive}.tar.gz" -C build/dist "${archive}"
 
       - name: Upload release archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
