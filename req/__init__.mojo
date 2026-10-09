@@ -10,3 +10,4 @@ from ._config import Timeout
 from ._auth import Auth
 
 from ._cookies import CookieJar
+from ._client import Client
