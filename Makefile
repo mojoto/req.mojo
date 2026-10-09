@@ -18,7 +18,7 @@ build/libreq_curl.a: req/_transports/_curl.c
 	$(AR) rcs $@ build/req_curl.o
 
 test: native
-	REQ_MOJO="$(MOJO)" REQ_MOJO_FLAGS="$(MOJO_FLAGS)" $(PYTHON) tools/run_tests.py $(TEST_ARGS)
+	REQ_MOJO="$(MOJO)" REQ_MOJO_FLAGS="$(MOJO_FLAGS)" $(PYTHON) tests/run_tests.py $(TEST_ARGS)
 
 build: native
 	mkdir -p build
@@ -29,5 +29,5 @@ format:
 
 clean:
 	rm -rf build .req-test-* __pycache__
-	find req tests tools -type d -name __pycache__ -prune -exec rm -rf {} +
-	find req tests tools -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -f {} +
+	find req tests -type d -name __pycache__ -prune -exec rm -rf {} +
+	find req tests -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -f {} +
