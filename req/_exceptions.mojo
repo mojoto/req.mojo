@@ -4,7 +4,7 @@ from std.format import Writable, Writer
 
 
 @fieldwise_init
-struct ErrorKind(TrivialRegisterPassable, Equatable, Writable):
+struct ErrorKind(Equatable, TrivialRegisterPassable, Writable):
     var _code: Int
 
     comptime InvalidURL = Self(0)
@@ -35,11 +35,25 @@ struct ErrorKind(TrivialRegisterPassable, Equatable, Writable):
 
     def write_to(self, mut writer: Some[Writer]):
         var names: List[String] = [
-            "InvalidURL", "InvalidRequest", "ConnectError", "ReadError",
-            "WriteError", "TLSError", "ProtocolError", "ConnectTimeout",
-            "ReadTimeout", "WriteTimeout", "TooManyRedirects", "UnsafeRedirect",
-            "HTTPStatusError", "DecodeError", "JSONDecodeError", "ClientClosed",
-            "StreamClosed", "StreamNotRead", "StreamConsumed",
+            "InvalidURL",
+            "InvalidRequest",
+            "ConnectError",
+            "ReadError",
+            "WriteError",
+            "TLSError",
+            "ProtocolError",
+            "ConnectTimeout",
+            "ReadTimeout",
+            "WriteTimeout",
+            "TooManyRedirects",
+            "UnsafeRedirect",
+            "HTTPStatusError",
+            "DecodeError",
+            "JSONDecodeError",
+            "ClientClosed",
+            "StreamClosed",
+            "StreamNotRead",
+            "StreamConsumed",
         ]
         if 0 <= self._code < len(names):
             writer.write(names[self._code])

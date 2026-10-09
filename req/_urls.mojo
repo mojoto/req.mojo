@@ -2,7 +2,14 @@
 
 from std.collections import Dict
 from ._exceptions import HTTPError, ErrorKind
-from ._utils import MultiItems, StringPairs, find_byte, percent_decode, percent_encode, hex_value
+from ._utils import (
+    MultiItems,
+    StringPairs,
+    find_byte,
+    percent_decode,
+    percent_encode,
+    hex_value,
+)
 from std.format import Writable, Writer
 from std.ffi import external_call, c_int
 from std.sys import CompilationTarget
@@ -13,7 +20,9 @@ def _slice(text: String, start: Int, end: Int = -1) -> String:
     return String(text[byte=start:stop])
 
 
-def _url_component(text: String, *, query: Bool = False) raises HTTPError -> String:
+def _url_component(
+    text: String, *, query: Bool = False
+) raises HTTPError -> String:
     var result = String()
     var i = 0
     while i < text.byte_length():
@@ -21,16 +30,31 @@ def _url_component(text: String, *, query: Bool = False) raises HTTPError -> Str
         if c < 32 or c == 127 or c == 92:
             raise HTTPError(ErrorKind.InvalidURL, "Invalid character in URL")
         if c == 37:
-            if i + 2 >= text.byte_length() or hex_value(Int(text.as_bytes()[i + 1])) < 0 or hex_value(Int(text.as_bytes()[i + 2])) < 0:
-                raise HTTPError(ErrorKind.InvalidURL, "Invalid percent escape in URL")
-            result += String(text[byte=i:i + 3])
+            if (
+                i + 2 >= text.byte_length()
+                or hex_value(Int(text.as_bytes()[i + 1])) < 0
+                or hex_value(Int(text.as_bytes()[i + 2])) < 0
+            ):
+                raise HTTPError(
+                    ErrorKind.InvalidURL, "Invalid percent escape in URL"
+                )
+            result += String(text[byte = i : i + 3])
             i += 3
-        elif c > 127 or c == 32 or c == 34 or c in [60, 62, 96, 123, 124, 125, 94]:
+        elif (
+            c > 127
+            or c == 32
+            or c == 34
+            or c in [60, 62, 96, 123, 124, 125, 94]
+        ):
             var digits = String("0123456789ABCDEF")
-            result += "%" + String(digits[byte=c // 16:c // 16 + 1]) + String(digits[byte=c % 16:c % 16 + 1])
+            result += (
+                "%"
+                + String(digits[byte = c // 16 : c // 16 + 1])
+                + String(digits[byte = c % 16 : c % 16 + 1])
+            )
             i += 1
         else:
-            result += String(text[byte=i:i + 1])
+            result += String(text[byte = i : i + 1])
             i += 1
     return result^
 
@@ -63,7 +87,7 @@ def _remove_dot_segments(path: String) -> String:
     return output^
 
 
-struct URL(ImplicitlyCopyable, Writable, Equatable):
+struct URL(Equatable, ImplicitlyCopyable, Writable):
     var _scheme: String
     var _host: String
     var _port: Optional[Int]
@@ -75,11 +99,16 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
     def __init__(out self, text: String) raises HTTPError:
         var colon = find_byte(text, 58)
         if colon == text.byte_length():
-            raise HTTPError(ErrorKind.InvalidURL, "An absolute HTTP or HTTPS URL is required")
+            raise HTTPError(
+                ErrorKind.InvalidURL,
+                "An absolute HTTP or HTTPS URL is required",
+            )
         self._scheme = String(text[byte=0:colon]).lower()
         if self._scheme != "http" and self._scheme != "https":
-            raise HTTPError(ErrorKind.InvalidURL, "Only HTTP and HTTPS URLs are supported")
-        if not String(text[byte=colon + 1:]).startswith("//"):
+            raise HTTPError(
+                ErrorKind.InvalidURL, "Only HTTP and HTTPS URLs are supported"
+            )
+        if not String(text[byte = colon + 1 :]).startswith("//"):
             raise HTTPError(ErrorKind.InvalidURL, "URL is missing an authority")
         var start = colon + 3
         var end = text.byte_length()
@@ -88,8 +117,14 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
                 end = i
                 break
         var authority = String(text[byte=start:end])
-        if authority.byte_length() == 0 or find_byte(authority, 64) != authority.byte_length():
-            raise HTTPError(ErrorKind.InvalidURL, "URL must have a host and cannot contain userinfo")
+        if (
+            authority.byte_length() == 0
+            or find_byte(authority, 64) != authority.byte_length()
+        ):
+            raise HTTPError(
+                ErrorKind.InvalidURL,
+                "URL must have a host and cannot contain userinfo",
+            )
         self._port = None
         var port_start = authority.byte_length()
         if authority.startswith("["):
@@ -98,12 +133,18 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
                 raise HTTPError(ErrorKind.InvalidURL, "Unclosed IPv6 address")
             self._host = String(authority[byte=1:bracket]).lower()
             var address = List[UInt8](length=16, fill=0)
-            var valid = external_call["inet_pton", c_int](c_int(30 if CompilationTarget.is_macos() else 10), self._host.as_c_string_span().ptr(), address.unsafe_ptr())
+            var valid = external_call["inet_pton", c_int](
+                c_int(30 if CompilationTarget.is_macos() else 10),
+                self._host.as_c_string_span().ptr(),
+                address.unsafe_ptr(),
+            )
             if valid != 1:
                 raise HTTPError(ErrorKind.InvalidURL, "Invalid IPv6 address")
             if bracket + 1 < authority.byte_length():
                 if authority.as_bytes()[bracket + 1] != 58:
-                    raise HTTPError(ErrorKind.InvalidURL, "Invalid IPv6 authority")
+                    raise HTTPError(
+                        ErrorKind.InvalidURL, "Invalid IPv6 authority"
+                    )
                 port_start = bracket + 2
             self._authority = "[" + self._host + "]"
         else:
@@ -114,7 +155,10 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
             for byte in self._host.as_bytes():
                 var c = Int(byte)
                 if not (48 <= c <= 57 or 97 <= c <= 122 or c in [45, 46]):
-                    raise HTTPError(ErrorKind.InvalidURL, "Host must be an ASCII hostname or IP address")
+                    raise HTTPError(
+                        ErrorKind.InvalidURL,
+                        "Host must be an ASCII hostname or IP address",
+                    )
             if separator < authority.byte_length():
                 port_start = separator + 1
             self._authority = self._host
@@ -125,7 +169,9 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
                     raise HTTPError(ErrorKind.InvalidURL, "Invalid URL port")
                 number = number * 10 + Int(byte) - 48
             if number < 1 or number > 65535:
-                raise HTTPError(ErrorKind.InvalidURL, "URL port must be between 1 and 65535")
+                raise HTTPError(
+                    ErrorKind.InvalidURL, "URL port must be between 1 and 65535"
+                )
             self._port = number
             if number != (443 if self._scheme == "https" else 80):
                 self._authority += ":" + String(number)
@@ -137,7 +183,9 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
         if self._path.byte_length() == 0:
             self._path = "/"
         self._has_query = question < fragment
-        self._query = _url_component(String(text[byte=question + 1:fragment]), query=True) if self._has_query else String()
+        self._query = _url_component(
+            String(text[byte = question + 1 : fragment]), query=True
+        ) if self._has_query else String()
 
     def scheme(self) -> String:
         return self._scheme
@@ -146,7 +194,9 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
         return self._host
 
     def port(self) -> Int:
-        return self._port.value() if self._port else (443 if self._scheme == "https" else 80)
+        return self._port.value() if self._port else (
+            443 if self._scheme == "https" else 80
+        )
 
     def path(self) -> String:
         return self._path
@@ -174,7 +224,10 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
         if target.startswith("//"):
             return Self(self._scheme + ":" + target)
         var path = String(target[byte=0:question])
-        var query = String(target[byte=question:]) if question < target.byte_length() else String()
+        var query = (
+            String(target[byte=question:]) if question
+            < target.byte_length() else String()
+        )
         if path.byte_length() == 0:
             if query.byte_length() == 0 and self._has_query:
                 query = "?" + self._query
@@ -188,7 +241,12 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
         return Self(self.origin() + _remove_dot_segments(path) + query)
 
     def __eq__(self, other: Self) -> Bool:
-        return self.origin() == other.origin() and self._path == other._path and self._query == other._query and self._has_query == other._has_query
+        return (
+            self.origin() == other.origin()
+            and self._path == other._path
+            and self._query == other._query
+            and self._has_query == other._has_query
+        )
 
     def __ne__(self, other: Self) -> Bool:
         return not self == other
@@ -199,7 +257,7 @@ struct URL(ImplicitlyCopyable, Writable, Equatable):
             writer.write("?", self._query)
 
 
-struct QueryParams(ImplicitlyCopyable, Writable, Sized):
+struct QueryParams(ImplicitlyCopyable, Sized, Writable):
     var _items: MultiItems[False]
 
     def __init__(out self):
@@ -225,7 +283,9 @@ struct QueryParams(ImplicitlyCopyable, Writable, Sized):
             var name = percent_decode(String(pair[byte=0:split]), form=True)
             var value = String()
             if split < pair.byte_length():
-                value = percent_decode(String(pair[byte=split + 1:]), form=True)
+                value = percent_decode(
+                    String(pair[byte = split + 1 :]), form=True
+                )
             self._items.add(name, value)
 
     def get(self, name: String) -> Optional[String]:
@@ -263,7 +323,11 @@ struct QueryParams(ImplicitlyCopyable, Writable, Sized):
         for pair in self._items._pairs:
             if result.byte_length() != 0:
                 result += "&"
-            result += percent_encode(pair[0], form=form) + "=" + percent_encode(pair[1], form=form)
+            result += (
+                percent_encode(pair[0], form=form)
+                + "="
+                + percent_encode(pair[1], form=form)
+            )
         return result^
 
     def write_to(self, mut writer: Some[Writer]):

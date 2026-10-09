@@ -34,8 +34,11 @@ def is_token(text: String) -> Bool:
     for byte in text.as_bytes():
         var c = Int(byte)
         if not (
-            48 <= c <= 57 or 65 <= c <= 90 or 97 <= c <= 122
-            or c in [33, 35, 36, 37, 38, 39, 42, 43, 45, 46, 94, 95, 96, 124, 126]
+            48 <= c <= 57
+            or 65 <= c <= 90
+            or 97 <= c <= 122
+            or c
+            in [33, 35, 36, 37, 38, 39, 42, 43, 45, 46, 94, 95, 96, 124, 126]
         ):
             return False
     return True
@@ -56,23 +59,36 @@ def percent_encode(text: String, *, form: Bool = False) -> String:
     var digits = String("0123456789ABCDEF")
     for byte in text.as_bytes():
         var c = Int(byte)
-        if 48 <= c <= 57 or 65 <= c <= 90 or 97 <= c <= 122 or c in [45, 46, 95, 126]:
+        if (
+            48 <= c <= 57
+            or 65 <= c <= 90
+            or 97 <= c <= 122
+            or c in [45, 46, 95, 126]
+        ):
             result += String(chr(c))
         elif c == 32 and form:
             result += "+"
         else:
-            result += "%" + String(digits[byte=c // 16 : c // 16 + 1]) + String(digits[byte=c % 16 : c % 16 + 1])
+            result += (
+                "%"
+                + String(digits[byte = c // 16 : c // 16 + 1])
+                + String(digits[byte = c % 16 : c % 16 + 1])
+            )
     return result^
 
 
-def percent_decode(text: String, *, form: Bool = False) raises HTTPError -> String:
+def percent_decode(
+    text: String, *, form: Bool = False
+) raises HTTPError -> String:
     var result = Bytes()
     var i = 0
     while i < text.byte_length():
         var c = Int(text.as_bytes()[i])
         if c == 37:
             if i + 2 >= text.byte_length():
-                raise HTTPError(ErrorKind.InvalidURL, "Incomplete percent escape")
+                raise HTTPError(
+                    ErrorKind.InvalidURL, "Incomplete percent escape"
+                )
             var high = hex_value(Int(text.as_bytes()[i + 1]))
             var low = hex_value(Int(text.as_bytes()[i + 2]))
             if high < 0 or low < 0:
@@ -141,10 +157,14 @@ struct MultiItems[ignore_case: Bool](ImplicitlyCopyable, Sized):
     def add(mut self, name: String, value: String) raises HTTPError:
         comptime if Self.ignore_case:
             if not is_token(name):
-                raise HTTPError(ErrorKind.InvalidRequest, "Invalid HTTP header name")
+                raise HTTPError(
+                    ErrorKind.InvalidRequest, "Invalid HTTP header name"
+                )
             for byte in value.as_bytes():
                 if byte == 10 or byte == 13 or byte == 0:
-                    raise HTTPError(ErrorKind.InvalidRequest, "Invalid HTTP header value")
+                    raise HTTPError(
+                        ErrorKind.InvalidRequest, "Invalid HTTP header value"
+                    )
         self._pairs.append((name, value))
 
     def set(mut self, name: String, value: String) raises HTTPError:

@@ -16,7 +16,10 @@ def encode_body(
     json: Optional[JSONValue] = None,
 ) raises HTTPError -> Optional[Bytes]:
     if Int(Bool(content)) + Int(Bool(data)) + Int(Bool(json)) > 1:
-        raise HTTPError(ErrorKind.InvalidRequest, "content, data, and json are mutually exclusive")
+        raise HTTPError(
+            ErrorKind.InvalidRequest,
+            "content, data, and json are mutually exclusive",
+        )
     if content:
         return content.value().copy()
     if data:

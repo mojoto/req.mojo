@@ -20,7 +20,13 @@ struct Timeout(ImplicitlyCopyable):
         self.write = seconds
         self.validate()
 
-    def __init__(out self, *, connect: Optional[Float64] = 5.0, imm read: Optional[Float64] = 5.0, imm write: Optional[Float64] = 5.0) raises HTTPError:
+    def __init__(
+        out self,
+        *,
+        connect: Optional[Float64] = 5.0,
+        imm read: Optional[Float64] = 5.0,
+        imm write: Optional[Float64] = 5.0,
+    ) raises HTTPError:
         self.connect = connect
         self.read = read
         self.write = write
@@ -37,4 +43,7 @@ struct Timeout(ImplicitlyCopyable):
     def validate(self) raises HTTPError:
         for field in [self.connect, self.read, self.write]:
             if field and (not isfinite(field.value()) or field.value() <= 0):
-                raise HTTPError(ErrorKind.InvalidRequest, "Timeout must be finite and positive or disabled")
+                raise HTTPError(
+                    ErrorKind.InvalidRequest,
+                    "Timeout must be finite and positive or disabled",
+                )

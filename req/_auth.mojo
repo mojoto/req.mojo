@@ -18,7 +18,10 @@ struct Auth(ImplicitlyCopyable):
     @staticmethod
     def basic(username: String, password: String) raises HTTPError -> Self:
         if ":" in username:
-            raise HTTPError(ErrorKind.InvalidRequest, "Basic authentication username cannot contain a colon")
+            raise HTTPError(
+                ErrorKind.InvalidRequest,
+                "Basic authentication username cannot contain a colon",
+            )
         var result = Self()
         result._header = "Basic " + b64encode(username + ":" + password)
         return result^
@@ -26,10 +29,14 @@ struct Auth(ImplicitlyCopyable):
     @staticmethod
     def bearer(token: String) raises HTTPError -> Self:
         if token.byte_length() == 0:
-            raise HTTPError(ErrorKind.InvalidRequest, "Bearer token cannot be empty")
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "Bearer token cannot be empty"
+            )
         for byte in token.as_bytes():
             if byte <= 32 or byte >= 127:
-                raise HTTPError(ErrorKind.InvalidRequest, "Invalid Bearer token")
+                raise HTTPError(
+                    ErrorKind.InvalidRequest, "Invalid Bearer token"
+                )
         var result = Self()
         result._header = "Bearer " + token
         return result^
