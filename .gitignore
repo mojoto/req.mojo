@@ -7,3 +7,9 @@ build/
 __pycache__/
 .DS_Store
 .req-test-*
+
+# Docusaurus
+website/node_modules/
+website/.docusaurus/
+website/.cache/
+website/build/
