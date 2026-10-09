@@ -1,0 +1,7 @@
+.venv/
+.serena/
+.deps/
+build/
+*.mojoc
+__pycache__/
+.DS_Store
