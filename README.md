@@ -1,4 +1,4 @@
-# req.mojo
+# Req.mojo
 
 A native synchronous HTTP client for Mojo.
 
