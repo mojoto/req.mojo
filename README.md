@@ -29,6 +29,12 @@ Requests default to verified TLS, five-second phase timeouts, and no automatic
 redirects or retries. HTTP 4xx/5xx responses return normally; call
 `raise_for_status()` to raise an error.
 
+This version supports synchronous HTTP/1.1. Async, HTTP/2, multipart, proxies,
+and automatic retries are outside its scope. Clients are intended for
+single-threaded use. Cookie handling has no public-suffix database and supports
+IMF-fixdate Expires values. Local validation covers macOS ARM64; Linux x86-64
+execution remains unverified.
+
 ## Installation
 
 Requires Mojo 1.1.0, [Pixi](https://pixi.sh), a C compiler, and libcurl 7.85+ with
@@ -37,44 +43,15 @@ install `build-essential libcurl4-openssl-dev openssl`.
 
 ```sh
 pixi install
-pixi run build
+make build
 ```
-
-JSON is installed through Pixi, following
-[ehsanmok/json's installation guide](https://github.com/ehsanmok/json#install).
-
-## Streaming
-
-```mojo
-import req
-
-
-def main() raises:
-    with req.stream("GET", "https://example.com/archive") as response:
-        response.raise_for_status()
-        while True:
-            var chunk = response.read_chunk(65536)
-            if not chunk:
-                break
-            print(len(chunk.value()))
-```
-
-Use `read()` to buffer an untouched stream, or `read_chunk()` to consume it
-incrementally. Context exit closes the response. `Client` provides the same
-request methods, plus shared settings, cookies, and connection reuse.
-
-This version supports synchronous HTTP/1.1. Async, HTTP/2, multipart, proxies,
-and automatic retries are outside its scope. Clients are intended for
-single-threaded use. Cookie handling has no public-suffix database and supports
-IMF-fixdate Expires values. Local validation covers macOS ARM64; Linux x86-64
-execution remains unverified.
 
 ## Testing
 
 ```sh
-pixi run test
+make test
 make test TEST_ARGS="--only test_client_requests_and_reuse"
-pixi run format
+make format
 make clean
 ```
 
