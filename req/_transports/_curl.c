@@ -207,6 +207,7 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     SET(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     SET(CURLOPT_PROTOCOLS_STR, "http,https");
     SET(CURLOPT_FOLLOWLOCATION, 0L);
+    SET(CURLOPT_PATH_AS_IS, 1L);
     SET(CURLOPT_NOSIGNAL, 1L);
     SET(CURLOPT_PROXY, "");
     SET(CURLOPT_NETRC, CURL_NETRC_IGNORED);

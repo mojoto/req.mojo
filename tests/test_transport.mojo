@@ -1,6 +1,11 @@
 from std.testing import TestSuite, assert_equal, assert_true
 from std.os import getenv
-from req._transports._ffi import CurlStream, new_pool, close_pool, release_pool
+from req._transports.default import (
+    CurlStream,
+    new_pool,
+    close_pool,
+    release_pool,
+)
 from req import Timeout
 from req._utils import decode_utf8
 
@@ -11,7 +16,16 @@ def test_native_transport() raises:
     var content = String()
     var largest = 0
     try:
-        var response = CurlStream(pool, "GET", getenv("REQ_TEST_URL") + "/chunked", "", None, Timeout(), True, None)
+        var response = CurlStream(
+            pool,
+            "GET",
+            getenv("REQ_TEST_URL") + "/chunked",
+            "",
+            None,
+            Timeout(),
+            True,
+            None,
+        )
         response_headers = response.headers()
         while True:
             var chunk = response.read_chunk(3)
