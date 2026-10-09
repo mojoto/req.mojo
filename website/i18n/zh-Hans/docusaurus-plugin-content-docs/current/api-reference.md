@@ -4,62 +4,30 @@ title: API 参考
 
 # API 参考
 
-从 `req` 导入公开 API。下划线开头的模块是实现细节，完整 Mojo 签名见[源码](https://github.com/mojoto/req.mojo/tree/main/req)。
+从 `req` 导入公开 API。每个页面给出具体签名、参数含义、返回行为、错误条件与示例。先阅读 [快速开始](./getting-started.md) 完成安装和原生传输链接。
 
-## 函数
+## 从任务选择 API
 
-| 函数 | 返回 |
-| --- | --- |
-| `request(method, url, ...)` | 已缓冲的 `Response`。 |
-| `get`、`head`、`post`、`put`、`patch`、`delete`、`options` | 使用对应方法的已缓冲响应。 |
-| `stream(method, url, ...)` | 未缓冲的 `Response`。 |
-| `encode_utf8(text)` | UTF-8 `Bytes`。 |
+- [HTTP 函数](./api/http.md) — 发送请求和创建响应流。
+- [Client](./api/client.md) — 复用连接、应用默认值并准备/发送请求。
+- [Request](./api/request.md) — 表示和校验待发送请求。
+- [Response](./api/response.md) — 检查元数据、读取响应体、处理状态和关闭流。
+- [Headers](./api/headers.md) — 读取、重复、替换和合并 HTTP 字段。
+- [QueryParams](./api/query-params.md) — 管理重复参数和查询/表单编码。
+- [URL](./api/url.md) — 解析、检查、转换和解析目标引用。
+- [JSONValue](./api/json.md) — 构造、解析、修改和读取有类型的 JSON。
+- [Auth](./api/auth.md) — 生成 Basic/Bearer 请求头并控制继承。
+- [Timeout](./api/timeout.md) — 配置独立的连接/读取/写入超时。
+- [CookieJar](./api/cookies.md) — 存储有作用域的 Cookie，并选择或提取它们。
+- [HTTPError 与 ErrorKind](./api/errors.md) — 了解每种错误类型和可用上下文。
+- [Bytes 与 encode_utf8](./api/bytes.md) — 处理显式字节内容。
 
-请求选项包括 `params`、`headers`、`auth`、`timeout`、`follow_redirects`、`verify`、`ca_file`。`request`、`stream` 及支持请求体的方法还接受互斥的 `content`、`data`、`json`。`get` 和 `head` 不暴露这些请求体参数。
+## 如何阅读示例
 
-## Client
+完整示例包含 `import req` 和可抛错的 `def main()`。单独的调用片段假定已经导入 `req`，并位于可抛错函数内。签名保留源码类型和默认值；`mut self` 表示修改持有者。下划线开头的模块不属于应用层 API。
 
-```text
-Client(*, base_url="", headers=Headers(), params=QueryParams(),
-       cookies=CookieJar(), auth=Auth.none(), timeout=Timeout(),
-       follow_redirects=False, max_redirects=20, verify=True, ca_file=None)
-```
+## 三条基本规则
 
-方法包括 `request`、`stream`、七种方法辅助函数、`build_request`、`send`、`context`、`close`、`is_closed`。单次请求可覆盖超时、重定向和认证配置；TLS 和重定向次数上限在客户端构造时配置。`cookies` 是持有的可变 CookieJar。
-
-`build_request(method, url, ...)` 返回合并默认值后的 Request。`send(request, *, stream=False, timeout=None, follow_redirects=None)` 发送已经构建的请求。
-
-## Request 和 Response
-
-`Request(method, url, *, headers=Headers(), content=None)` 保存方法、URL、请求头和可选字节，`validate()` 校验约束。
-
-响应元数据：`status_code`、`reason_phrase`、`http_version`、`url`、`headers`、`request`。
-
-| 方法 | 返回 |
-| --- | --- |
-| `content()`、`read()` | `Bytes`；`read()` 缓冲尚未消费的流。 |
-| `read_chunk(max_bytes=65536)` | `Optional[Bytes]`，EOF 返回 `None`。 |
-| `text(*, encoding=None)` | `String`。 |
-| `json()` | `JSONValue`。 |
-| `is_success()`、`is_redirect()`、`is_closed()` | `Bool`。 |
-| `raise_for_status()` | 为 400–599 状态抛错。 |
-| `close()` | 关闭传输流。 |
-
-Client 和 Response 是可移动的资源持有者。上下文借用这些持有者，用 `with owner.context() as client` 和 `with req.stream(...) as body` 管理关闭。
-
-## 值类型
-
-| 导出 | 构造和操作 |
-| --- | --- |
-| `Bytes` | 无符号字节列表。 |
-| `Headers` | 空、字符串字典、键值对列表；`get`、`get_all`、下标、成员判断、`items`、`add`、`set`、`remove`、`merge`。 |
-| `QueryParams` | 空、查询字符串、字符串字典、键值对列表；`get`、`get_all`、下标、成员判断、`items`、`add`、`set`、`remove`、`merge`；`String(params)` 序列化。 |
-| `URL` | 绝对 HTTP(S) URL；`scheme`、`host`、`port`、`path`、`query`、`origin`、`resolve`、`query_params`、`with_query`；`String(url)` 序列化。 |
-| `JSONValue` | String、Int、Float64、Bool 或原生 JSON Value；`null`、`object`、`array`、`parse`、`to_string`、`set`、`append`、下标、`is_null`、`string_value`、`int_value`、`float_value`、`bool_value`。 |
-| `Auth` | `none()`、`basic(username, password)`、`bearer(token)`。 |
-| `Timeout` | 默认每阶段 5 秒；统一秒数或命名 `connect`、`read`、`write`；`disabled()` 和 `validate()`。 |
-| `CookieJar` | `set`、`get`、`delete`、`clear`、`header`、`extract`。 |
-| `HTTPError` | `kind`、`message` 和可选 `method`、`url`、`status_code`。 |
-| `ErrorKind` | 见[错误处理](./errors.md)的常量。 |
-
-参阅[请求体](./requests.md)、[客户端默认值](./clients.md)和[响应消费规则](./streaming.md)。
+1. 普通请求返回已缓冲响应；`stream()` 收到响应头后返回，需选择整包或分块消费。
+2. HTTP 4xx/5xx 默认正常返回；需要状态错误时调用 `raise_for_status()`。
+3. Client 与 Response 是可移动资源持有者，用上下文管理关闭，不要隐式复制。

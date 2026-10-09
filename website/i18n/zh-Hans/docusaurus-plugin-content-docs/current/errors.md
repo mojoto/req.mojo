@@ -36,3 +36,7 @@ HTTP 4xx/5xx 默认是正常响应，调用 `raise_for_status()` 才抛错。传
 | `StreamNotRead`、`StreamConsumed` | 缓冲前或分块消费后尝试访问整个响应体。 |
 
 Req 不自动重试请求。应用层重试时，应考虑请求操作和请求体是否能安全再次发送。
+
+## API 详情
+
+[HTTPError / ErrorKind](./api/errors.md)

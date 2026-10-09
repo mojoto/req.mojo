@@ -2,77 +2,32 @@
 title: API Reference
 ---
 
-# API reference
+# API Reference
 
-Import the public API from `req`. Underscore-prefixed modules are implementation
-details. See [source](https://github.com/mojoto/req.mojo/tree/main/req) for full
-Mojo signatures.
+Import the public API from `req`. Each page explains signatures, parameters, returned values, error conditions, and examples. Follow [Getting Started](./getting-started.md) for installation and native transport linking.
 
-## Functions
+## Choose an API for your task
 
-| Function | Result |
-| --- | --- |
-| `request(method, url, ...)` | Buffered `Response`. |
-| `get`, `head`, `post`, `put`, `patch`, `delete`, `options` | Buffered request with the named method. |
-| `stream(method, url, ...)` | Unbuffered `Response`. |
-| `encode_utf8(text)` | UTF-8 `Bytes`. |
+- [HTTP Functions](./api/http.md) — Send requests and start streams.
+- [Client](./api/client.md) — Reuse connections, apply defaults, and prepare/send requests.
+- [Request](./api/request.md) — Represent and validate an outgoing request.
+- [Response](./api/response.md) — Inspect metadata, read bodies, handle status, and close streams.
+- [Headers](./api/headers.md) — Read, repeat, replace, and merge HTTP fields.
+- [QueryParams](./api/query-params.md) — Manage repeated parameters and query/form encoding.
+- [URL](./api/url.md) — Parse, inspect, transform, and resolve targets.
+- [JSONValue](./api/json.md) — Construct, parse, mutate, and read typed JSON values.
+- [Auth](./api/auth.md) — Generate Basic/Bearer headers and control inheritance.
+- [Timeout](./api/timeout.md) — Set independent connect/read/write deadlines.
+- [CookieJar](./api/cookies.md) — Store scoped cookies and select or extract them.
+- [HTTPError and ErrorKind](./api/errors.md) — Understand individual error kinds and available context.
+- [Bytes and encode_utf8](./api/bytes.md) — Work with explicit byte-oriented content.
 
-Request options include `params`, `headers`, `auth`, `timeout`,
-`follow_redirects`, `verify`, and `ca_file`. `request`, `stream`, and body-bearing
-helpers also accept mutually exclusive `content`, `data`, and `json`.
-`get` and `head` do not expose those body keywords.
+## Read the examples
 
-## Client
+Complete examples include `import req` and a raising `def main()`. Short call snippets assume `req` is imported and run inside a raising function. Signatures retain source types and defaults; `mut self` marks mutation of the owner. Underscore-prefixed modules are outside the application API.
 
-```text
-Client(*, base_url="", headers=Headers(), params=QueryParams(),
-       cookies=CookieJar(), auth=Auth.none(), timeout=Timeout(),
-       follow_redirects=False, max_redirects=20, verify=True, ca_file=None)
-```
+## Three core rules
 
-Methods: `request`, `stream`, the seven method helpers, `build_request`, `send`,
-`context`, `close`, and `is_closed`. Client request methods allow per-request
-timeout, redirect, and authentication overrides; TLS settings and redirect
-limit are client configuration. `cookies` is the owned mutable CookieJar.
-
-`build_request(method, url, ...)` returns a Request with merged defaults.
-`send(request, *, stream=False, timeout=None, follow_redirects=None)` sends it.
-
-## Request and Response
-
-`Request(method, url, *, headers=Headers(), content=None)` stores a method,
-URL, headers, and optional bytes. `validate()` checks its invariants.
-
-Response metadata: `status_code`, `reason_phrase`, `http_version`, `url`,
-`headers`, and `request`.
-
-| Method | Result |
-| --- | --- |
-| `content()`, `read()` | `Bytes`; `read()` buffers an untouched stream. |
-| `read_chunk(max_bytes=65536)` | `Optional[Bytes]`; `None` at EOF. |
-| `text(*, encoding=None)` | `String`. |
-| `json()` | `JSONValue`. |
-| `is_success()`, `is_redirect()`, `is_closed()` | `Bool`. |
-| `raise_for_status()` | Raises for 400–599. |
-| `close()` | Closes the transport stream. |
-
-Client and Response are movable resource owners. Contexts borrow those owners;
-use `with owner.context() as client` and `with req.stream(...) as body` for closure.
-
-## Value types
-
-| Export | Construction and operations |
-| --- | --- |
-| `Bytes` | List of unsigned bytes. |
-| `Headers` | Empty, string dictionary, or pair list; `get`, `get_all`, indexing, membership, `items`, `add`, `set`, `remove`, `merge`. |
-| `QueryParams` | Empty, query string, string dictionary, or pair list; `get`, `get_all`, indexing, membership, `items`, `add`, `set`, `remove`, `merge`; `String(params)` serializes. |
-| `URL` | Absolute HTTP(S) URL; `scheme`, `host`, `port`, `path`, `query`, `origin`, `resolve`, `query_params`, `with_query`; `String(url)` serializes. |
-| `JSONValue` | String, Int, Float64, Bool, or native JSON Value; `null`, `object`, `array`, `parse`, `to_string`, `set`, `append`, indexing, `is_null`, `string_value`, `int_value`, `float_value`, `bool_value`. |
-| `Auth` | `none()`, `basic(username, password)`, `bearer(token)`. |
-| `Timeout` | Default 5 seconds per phase; uniform seconds or named `connect`, `read`, `write`; `disabled()` and `validate()`. |
-| `CookieJar` | `set`, `get`, `delete`, `clear`, `header`, `extract`. |
-| `HTTPError` | `kind`, `message`, optional `method`, `url`, `status_code`. |
-| `ErrorKind` | Constants listed in [error handling](./errors.md). |
-
-See the guides for [request bodies](./requests.md), [client defaults](./clients.md),
-and [response consumption rules](./streaming.md).
+1. Ordinary requests return buffered bodies; `stream()` returns after headers and requires a choice of whole-body or chunk consumption.
+2. HTTP 4xx/5xx returns normally; call `raise_for_status()` to require status success.
+3. Client and Response are movable owners. Manage closure through contexts and avoid implicit copies.

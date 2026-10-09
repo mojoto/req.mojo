@@ -66,3 +66,7 @@ preserve the method and body. Converted requests drop body-related headers.
 
 TLS verification defaults to on. Use `ca_file="/path/to/ca.pem"` for a custom CA.
 `verify=False` disables verification; it cannot be combined with a CA file.
+
+## API details
+
+[Client](./api/client.md), [CookieJar](./api/cookies.md), [URL](./api/url.md)

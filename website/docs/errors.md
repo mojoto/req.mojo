@@ -40,3 +40,7 @@ does not guarantee that a streamed body can be read completely.
 
 Req does not automatically retry requests. If your application retries, consider
 whether the operation and request body can safely be sent again.
+
+## API details
+
+[HTTPError / ErrorKind](./api/errors.md)
