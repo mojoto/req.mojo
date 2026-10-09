@@ -4,7 +4,7 @@ PYTHON ?= pixi run python
 CFLAGS ?= -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror
 LINK_FLAGS := -Xlinker build/libreq_curl.a -Xlinker -lcurl
 
-.PHONY: install native test build format
+.PHONY: install native test build format clean
 
 install:
 	pixi install
@@ -25,4 +25,7 @@ build: native
 	$(MOJO) precompile $(MOJO_FLAGS) req -o build/req.mojoc
 
 format:
-	$(MOJO) format req tests examples
+	$(MOJO) format req tests
+
+clean:
+	rm -rf build .req-test-*
