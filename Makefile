@@ -1,17 +1,26 @@
 MOJO ?= pixi run mojo
 MOJO_FLAGS ?= --Werror -I .
-TEST_FILES := $(sort $(wildcard tests/test_*.mojo tests/models/test_*.mojo tests/client/test_*.mojo))
+PYTHON ?= pixi run python
+CFLAGS ?= -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror
+LINK_FLAGS := -Xlinker build/libreq_curl.a -Xlinker -lcurl
 
-.PHONY: install test build format
+.PHONY: install native test build format
 
 install:
 	pixi install
 	$(MOJO) --version
 
-test:
-	@set -e; for file in $(TEST_FILES); do $(MOJO) run $(MOJO_FLAGS) "$$file"; done
+native: build/libreq_curl.a
 
-build:
+build/libreq_curl.a: req/_transports/_curl.c
+	mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o build/req_curl.o
+	$(AR) rcs $@ build/req_curl.o
+
+test: native
+	REQ_MOJO="$(MOJO)" REQ_MOJO_FLAGS="$(MOJO_FLAGS)" $(PYTHON) tools/run_tests.py
+
+build: native
 	mkdir -p build
 	$(MOJO) precompile $(MOJO_FLAGS) req -o build/req.mojoc
 
