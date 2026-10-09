@@ -43,16 +43,6 @@ pixi run build
 JSON is installed through Pixi, following
 [ehsanmok/json's installation guide](https://github.com/ehsanmok/json#install).
 
-Build and run an example from the project root:
-
-```sh
-pixi run mojo build --Werror -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl \
-  examples/quickstart.mojo -o .req-example-quickstart
-./.req-example-quickstart https://httpbin.org/anything
-rm .req-example-quickstart
-```
-
 ## Streaming
 
 ```mojo
