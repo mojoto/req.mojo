@@ -91,6 +91,10 @@ struct JSONValue(ImplicitlyCopyable):
             raise HTTPError(
                 ErrorKind.JSONDecodeError, "JSON value is not a number"
             )
+        if self._value.is_int():
+            return Float64(self._value.int_value())
+        if self._value.is_uint():
+            return Float64(self._value.uint_value())
         return self._value.float_value()
 
     def bool_value(self) raises HTTPError -> Bool:

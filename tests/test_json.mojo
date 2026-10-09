@@ -39,5 +39,15 @@ def test_nonfinite_numbers_rejected() raises:
             _ = JSONValue(value)
 
 
+def test_number_conversion() raises:
+    assert_equal(JSONValue(42).float_value(), 42.0)
+    assert_equal(JSONValue.parse("-42").float_value(), -42.0)
+    assert_equal(
+        JSONValue.parse("9223372036854775808").float_value(),
+        9223372036854775808.0,
+    )
+    assert_equal(JSONValue(Float64(1.5)).float_value(), 1.5)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
