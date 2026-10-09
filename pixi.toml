@@ -1,0 +1,17 @@
+[workspace]
+name = "req"
+version = "0.1.0"
+channels = ["https://conda.modular.com/max", "conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+preview = ["pixi-build"]
+
+[dependencies]
+mojo = "==1.1.0"
+json = { git = "https://github.com/ehsanmok/json.git", tag = "v0.4.1" }
+python = ">=3.12,<3.15"
+make = ">=4"
+
+[tasks]
+test = "make test"
+build = "make build"
+format = "make format"
