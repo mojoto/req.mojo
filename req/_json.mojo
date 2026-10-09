@@ -1,6 +1,7 @@
 """Native JSON integration with a stable HTTP-facing value type."""
 
 from json import loads, dumps, Value, Null, check_no_unpaired_surrogates
+from std.math import isfinite
 from ._exceptions import HTTPError, ErrorKind
 
 
@@ -19,7 +20,11 @@ struct JSONValue(ImplicitlyCopyable):
     def __init__(out self, value: Int):
         self._value = Value(value)
 
-    def __init__(out self, value: Float64):
+    def __init__(out self, value: Float64) raises HTTPError:
+        if not isfinite(value):
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "JSON numbers must be finite"
+            )
         self._value = Value(value)
 
     def __init__(out self, value: Bool):
@@ -55,42 +60,58 @@ struct JSONValue(ImplicitlyCopyable):
         try:
             return Self(self._value[key])
         except:
-            raise HTTPError(ErrorKind.JSONDecodeError, "JSON object key is missing")
+            raise HTTPError(
+                ErrorKind.JSONDecodeError, "JSON object key is missing"
+            )
 
     def __getitem__(self, index: Int) raises HTTPError -> Self:
         try:
             return Self(self._value[index])
         except:
-            raise HTTPError(ErrorKind.JSONDecodeError, "JSON array index is invalid")
+            raise HTTPError(
+                ErrorKind.JSONDecodeError, "JSON array index is invalid"
+            )
 
     def string_value(self) raises HTTPError -> String:
         if not self._value.is_string():
-            raise HTTPError(ErrorKind.JSONDecodeError, "JSON value is not a string")
+            raise HTTPError(
+                ErrorKind.JSONDecodeError, "JSON value is not a string"
+            )
         return self._value.string_value()
 
     def int_value(self) raises HTTPError -> Int:
         if not self._value.is_int():
-            raise HTTPError(ErrorKind.JSONDecodeError, "JSON value is not an integer")
+            raise HTTPError(
+                ErrorKind.JSONDecodeError, "JSON value is not an integer"
+            )
         return Int(self._value.int_value())
 
     def float_value(self) raises HTTPError -> Float64:
         if not self._value.is_number():
-            raise HTTPError(ErrorKind.JSONDecodeError, "JSON value is not a number")
+            raise HTTPError(
+                ErrorKind.JSONDecodeError, "JSON value is not a number"
+            )
         return self._value.float_value()
 
     def bool_value(self) raises HTTPError -> Bool:
         if not self._value.is_bool():
-            raise HTTPError(ErrorKind.JSONDecodeError, "JSON value is not a boolean")
+            raise HTTPError(
+                ErrorKind.JSONDecodeError, "JSON value is not a boolean"
+            )
         return self._value.bool_value()
 
     def set(mut self, key: String, value: Self) raises HTTPError:
         try:
             self._value.set(key, value._value)
         except:
-            raise HTTPError(ErrorKind.InvalidRequest, "Cannot set a JSON object member")
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "Cannot set a JSON object member"
+            )
 
     def append(mut self, value: Self) raises HTTPError:
         try:
             self._value.append(value._value)
         except:
-            raise HTTPError(ErrorKind.InvalidRequest, "Cannot append a JSON array member")
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "Cannot append a JSON array member"
+            )

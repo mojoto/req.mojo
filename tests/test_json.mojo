@@ -1,9 +1,12 @@
 from std.testing import TestSuite, assert_equal, assert_true, assert_raises
 from req import JSONValue
+from std.math import inf, nan
 
 
 def test_json_parse() raises:
-    var value = JSONValue.parse('{"name":"Mojo","scores":[1,2],"active":true,"empty":null}')
+    var value = JSONValue.parse(
+        '{"name":"Mojo","scores":[1,2],"active":true,"empty":null}'
+    )
     assert_equal(value["name"].string_value(), "Mojo")
     assert_equal(value["scores"][1].int_value(), 2)
     assert_true(value["active"].bool_value())
@@ -28,6 +31,12 @@ def test_json_unicode_and_invalid_input() raises:
     for text in ["", "{", "[1,]", "NaN", "true trailing", '"\\uD800"']:
         with assert_raises():
             _ = JSONValue.parse(text)
+
+
+def test_nonfinite_numbers_rejected() raises:
+    for value in [inf[DType.float64](), nan[DType.float64]()]:
+        with assert_raises():
+            _ = JSONValue(value)
 
 
 def main() raises:
