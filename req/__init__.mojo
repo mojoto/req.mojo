@@ -1,4 +1,4 @@
-"""An HTTPX-inspired native HTTP client for Mojo."""
+"""A native synchronous HTTP client for Mojo."""
 
 from ._exceptions import HTTPError, ErrorKind
 from ._types import Bytes

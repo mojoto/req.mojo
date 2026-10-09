@@ -2,7 +2,7 @@
 
 req.mojo 采用 requests 的便捷调用方式和 HTTPX 的 `Client` 组织方式：少量请求直接调用 `req.get()`，需要连接复用、公共配置和 Cookie 会话时使用 `Client`。公共接口使用 Mojo 原生类型，调用方不需要 Python 运行时。
 
-这是第一版接口草案。下文的签名和示例表达目标契约，省略函数体、部分重载、所有权参数和上下文管理器实现，并非已经可编译的源码。Mojo 编译器版本、HTTP/TLS 后端和 JSON 库在实现前确定。
+同步第一版已按此契约实现。下文的签名省略函数体、部分重载和所有权参数，用于说明接口；可编译示例见 `examples/`。实现使用 Mojo 1.1.0、原生 libcurl HTTP/1.1 后端和通过 Pixi Git 依赖安装的 `ehsanmok/json` v0.4.1，HTTP 与 JSON 调用不依赖 Python 运行时。
 
 ## 1. API 取舍
 
@@ -136,7 +136,9 @@ struct Client:
 
 `with Client(...)` 退出时调用 `close()`；显式 `close()` 可重复调用。关闭后不能再次发送请求或重新进入上下文，报 `ClientClosed`。
 
-普通响应完全拥有缓存字节，可以在客户端关闭后继续解析。流式响应持有传输资源；关闭客户端会关闭其活动流，随后读取报 `StreamClosed`。内部句柄必须保证客户端先关闭、响应后关闭也不会重复释放。`Response` 同样不隐式复制。
+普通响应完全拥有缓存字节，可以在客户端关闭后继续解析。流式响应持有传输资源；显式关闭客户端会关闭其活动流，随后读取报 `StreamClosed`。内部句柄保证客户端先关闭、响应后关闭不会重复释放。`Response` 同样不隐式复制。Mojo 可在最后一次使用后提前析构客户端，因此析构只释放客户端的连接池引用，活动响应继续持有连接池；需要取消活动流时使用 `close()` 或上下文退出。
+
+Mojo 的 `with` 绑定返回受 origin 约束的借用视图。临时客户端使用 `with Client(...) as client`；已有客户端使用 `with owner.context() as client`。绑定中的 CookieJar 通过 `client.cookies()` 访问，所有者的字段仍是 `owner.cookies`。临时响应可直接使用 `with client.stream(...) as response`；已有响应使用显式 `close()`。
 
 ## 4. Request 与 Response
 
@@ -187,7 +189,7 @@ struct Response:
     def is_closed() -> Bool
 ```
 
-响应元数据由库提供，只读访问；上面的 `var` 仅描述字段类型。`url` 和 `request` 对应最终一次请求。第一版不提供完整重定向 `history` 或耗时指标，避免过早固定其存储和计时含义。
+响应元数据由库提供，调用方应按只读使用；Mojo 的公开 `var` 字段未在语言层限制修改。`url` 和 `request` 对应最终一次请求。第一版不提供完整重定向 `history` 或耗时指标，避免过早固定其存储和计时含义。
 
 普通请求返回前读完响应体并释放连接租约。`content/text/json` 只操作缓存，不隐式联网。这里采用 `text()` 和 `content()` 方法，明确它们是可能失败或复制数据的操作；第一版返回拥有所有权的值，不暴露悬垂的字节视图。
 
@@ -206,7 +208,7 @@ with req.stream("GET", "https://example.com/archive.tar") as response:
         var chunk = response.read_chunk(65536)
         if not chunk:
             break
-        # 将 chunk.value() 的字节写入目标文件。
+        # Write chunk.value() to the destination file.
 ```
 
 `stream()` 调用完成时已收到最终响应头，响应体尚未完整缓存。读取有两条互斥路径：
@@ -236,6 +238,8 @@ Requests 的流式使用也要求消费响应或关闭响应后才能释放连�
 
 CookieJar 手工 `set/get/delete` 要求显式 `domain`，`path` 默认 `/`；`set` 可指定 `secure` 和到期时间。来自 Set-Cookie 的 host-only 属性由响应 origin 决定。第一版每次请求的临时 Cookie 用显式请求头表达：显式 `Cookie` 头覆盖自动生成值，不做两种文本的隐式拼接。
 
+当前 CookieJar 不包含公共后缀数据库，Expires 支持 IMF-fixdate；不承诺完整浏览器 Cookie 兼容性。`build_request()` 后手工编辑的 Cookie 头在同 origin 重定向时仍视为显式值；自动生成的 Cookie 按重定向目标重新选择。
+
 显式 `Authorization` 头优先于 `Auth`；自动生成认证仅补充缺失头。重定向跨 origin 时移除 Authorization、Proxy-Authorization 和显式 Cookie，不重新附加初始认证；CookieJar 按新 URL 重新选取 Cookie。HTTPS 到 HTTP 的自动降级重定向报 `UnsafeRedirect`。
 
 ## 7. 默认行为与错误
@@ -255,7 +259,7 @@ struct HTTPError:
     var kind: ErrorKind
     var message: String
     var method: Optional[String]
-    var url: Optional[URL]
+    var url: Optional[String]
     var status_code: Optional[Int]
 ```
 
@@ -284,4 +288,4 @@ struct HTTPError:
 6. 流式 EOF 与读取错误不同；提前关闭释放连接；部分消费后无法误解析完整 JSON。
 7. 204、无效 UTF-8、无效 JSON、3xx、4xx、5xx 分别符合解析和状态检查约定；gzip/deflate 的普通与流式解码结果一致。
 
-网络后端、JSON 库、编译器最低版本和资源句柄实现属于下一步实现设计；它们需要验证上述契约，尤其是阶段超时、typed raises 与资源释放，而不是仅让签名看起来相似。
+单测使用本地 HTTP/TLS 服务，按模块组织并由 Mojo `TestSuite` 自动发现 `test_` 函数。测试入口自动收集模块，只编译一个位于项目根目录的临时二进制，运行后删除。当前已在 macOS ARM64 验证；Linux x86-64 的 Pixi 依赖已锁定，执行验证仍待补充。完整包另执行 `mojo precompile --Werror` 检查，避免只依赖单测实例化路径。
