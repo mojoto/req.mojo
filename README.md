@@ -2,6 +2,9 @@
 
 A native synchronous HTTP client for Mojo.
 
+[Documentation](https://mojoto.github.io/req.mojo/) ·
+[简体中文](https://mojoto.github.io/req.mojo/zh-Hans/)
+
 ```mojo
 import req
 
@@ -59,5 +62,21 @@ Tests use local HTTP/TLS fixtures. The runner automatically collects test
 modules, lets Mojo's `TestSuite` discover their `test_` functions, and builds one
 `.req-test-suite` executable in the project root. It removes temporary files
 after the run.
+
+## Documentation website
+
+The documentation uses Docusaurus 3 and React, with English and Simplified
+Chinese content, matching [morrow.mojo](https://github.com/mojoto/morrow.mojo).
+Requires Node.js 22 or newer.
+
+```sh
+make doc-install
+make doc-start
+make doc-build
+make doc-serve
+```
+
+`make doc-clean` removes generated site files. Pull requests validate both
+languages; changes on `main` deploy automatically to GitHub Pages.
 
 req.mojo is [MIT licensed](LICENSE).

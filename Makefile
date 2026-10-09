@@ -4,7 +4,9 @@ PYTHON ?= pixi run python
 CFLAGS ?= -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror
 LINK_FLAGS := -Xlinker build/libreq_curl.a -Xlinker -lcurl
 
-.PHONY: install native test build format clean
+DOCS_DIR := website
+
+.PHONY: install native test build format clean doc-install doc-start doc-build doc-serve doc-clean
 
 install:
 	pixi install
@@ -31,3 +33,19 @@ clean:
 	rm -rf build .req-test-* __pycache__
 	find req tests -type d -name __pycache__ -prune -exec rm -rf {} +
 	find req tests -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -f {} +
+
+doc-install:
+	npm --prefix $(DOCS_DIR) ci
+
+doc-start:
+	npm --prefix $(DOCS_DIR) start
+
+doc-build:
+	npm --prefix $(DOCS_DIR) run build
+
+doc-serve:
+	npm --prefix $(DOCS_DIR) run serve
+
+doc-clean:
+	npm --prefix $(DOCS_DIR) run clear
+	rm -rf $(DOCS_DIR)/build
