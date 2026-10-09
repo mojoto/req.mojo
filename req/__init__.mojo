@@ -3,9 +3,8 @@
 from ._exceptions import HTTPError, ErrorKind
 from ._types import Bytes
 from ._utils import encode_utf8
-from ._models import Headers
+from ._models import Headers, Request, Response
 from ._urls import QueryParams, URL
-
 from ._json import JSONValue
 from ._config import Timeout
 from ._auth import Auth
