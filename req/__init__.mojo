@@ -7,3 +7,4 @@ from ._models import Headers
 from ._urls import QueryParams, URL
 
 from ._json import JSONValue
+from ._config import Timeout
