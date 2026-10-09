@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 from req import QueryParams
 from req._types import StringPairs
 
@@ -33,5 +33,4 @@ def test_empty_query_params() raises:
     assert_equal(q.encode(form=True), "a+b=x%2By+%E9%9B%AA")
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

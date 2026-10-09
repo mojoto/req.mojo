@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import assert_equal, assert_true, assert_raises
 from req import JSONValue
 from std.math import inf, nan
 
@@ -49,5 +49,4 @@ def test_number_conversion() raises:
     assert_equal(JSONValue(Float64(1.5)).float_value(), 1.5)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

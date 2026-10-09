@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import assert_equal, assert_true, assert_raises
 from std.os import getenv
 from req import Client, ErrorKind
 from req._utils import percent_encode
@@ -36,5 +36,4 @@ def test_downgrade_redirect_rejected() raises:
     assert_true(caught)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

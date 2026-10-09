@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_raises
+from std.testing import assert_equal, assert_raises
 from req import Auth, Headers
 
 
@@ -21,5 +21,4 @@ def test_bearer_auth_and_explicit_header() raises:
             _ = Auth.bearer(value)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

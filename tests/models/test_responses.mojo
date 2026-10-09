@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import assert_equal, assert_true, assert_raises
 from req import Response, Request, Headers, Bytes, encode_utf8
 
 
@@ -59,5 +59,4 @@ def test_empty_response_and_closed_buffer() raises:
     assert_equal(len(buffered.read_chunk(9223372036854775807).value()), 6)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

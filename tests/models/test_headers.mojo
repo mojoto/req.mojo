@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import assert_equal, assert_true, assert_raises
 from req import Headers
 from req._types import StringPairs
 
@@ -32,7 +32,10 @@ def test_headers_copy_and_multivalue_merge() raises:
     var pairs: StringPairs = [("x-default", "one"), ("X-Default", "two")]
     original.merge(Headers(pairs))
     assert_equal(original.get_all("x-default"), List[String](["one", "two"]))
-    var cookie_pairs: StringPairs = [("Set-Cookie", "a=1"), ("Set-Cookie", "b=2")]
+    var cookie_pairs: StringPairs = [
+        ("Set-Cookie", "a=1"),
+        ("Set-Cookie", "b=2"),
+    ]
     var cookies = Headers(cookie_pairs)
     assert_equal(cookies.get_all("set-cookie"), List[String](["a=1", "b=2"]))
 
@@ -46,5 +49,4 @@ def test_invalid_headers() raises:
             _ = Headers({"a": value})
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

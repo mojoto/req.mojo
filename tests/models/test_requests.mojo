@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import assert_equal, assert_true, assert_raises
 from req import Request, Headers, Bytes, encode_utf8, QueryParams, JSONValue
 from req._content import encode_body
 
@@ -22,13 +22,22 @@ def test_request_validation() raises:
     var body = encode_utf8("abc")
     for header in ["2", "4", "-3", "3, 3"]:
         with assert_raises():
-            _ = Request("POST", "http://example.com", headers=Headers({"Content-Length": header}), content=body.copy())
+            _ = Request(
+                "POST",
+                "http://example.com",
+                headers=Headers({"Content-Length": header}),
+                content=body.copy(),
+            )
     with assert_raises():
         _ = Request("HEAD", "http://example.com", content=body.copy())
     with assert_raises():
         _ = Request("GET\n", "http://example.com")
     with assert_raises():
-        _ = Request("POST", "http://example.com", headers=Headers({"Transfer-Encoding": "chunked"}))
+        _ = Request(
+            "POST",
+            "http://example.com",
+            headers=Headers({"Transfer-Encoding": "chunked"}),
+        )
 
 
 def test_body_encoders() raises:
@@ -44,5 +53,4 @@ def test_body_encoders() raises:
         _ = encode_body(headers, data=QueryParams(), json=JSONValue.null())
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

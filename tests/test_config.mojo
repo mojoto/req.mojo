@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import assert_equal, assert_true, assert_raises
 from req import Timeout
 from std.math import inf, nan
 
@@ -19,5 +19,4 @@ def test_invalid_timeouts() raises:
             _ = Timeout(seconds)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

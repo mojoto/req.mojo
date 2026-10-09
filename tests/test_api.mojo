@@ -1,5 +1,5 @@
 import req
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import assert_equal, assert_true, assert_raises
 from std.os import getenv
 from req import Headers, QueryParams, Auth, JSONValue, encode_utf8
 
@@ -54,5 +54,4 @@ def test_top_level_session_isolation_and_status() raises:
         _ = invalid.text()
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

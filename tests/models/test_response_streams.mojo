@@ -48,5 +48,4 @@ def test_stream_response_cache() raises:
     assert_equal(len(response.content()), 11)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

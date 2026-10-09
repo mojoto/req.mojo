@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 from req._cookies import CookieJar
 from req import URL, Headers
 
@@ -55,5 +55,4 @@ def test_set_cookie_and_expiration() raises:
     assert_true(Bool(jar.header(URL("https://example.com/api/items"))))
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

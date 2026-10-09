@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_raises
+from std.testing import assert_equal, assert_raises
 from req import URL, QueryParams
 
 
@@ -8,25 +8,37 @@ def test_url_components() raises:
     assert_equal(url.host(), "example.com")
     assert_equal(url.port(), 443)
     assert_equal(String(URL("http://[::1]:8080")), "http://[::1]:8080/")
-    assert_equal(String(URL("http://example.com/?a=%2f")), "http://example.com/?a=%2f")
+    assert_equal(
+        String(URL("http://example.com/?a=%2f")), "http://example.com/?a=%2f"
+    )
 
 
 def test_url_query_params() raises:
     var url = URL("https://example.com/?a=1&a=2")
     assert_equal(url.query_params().get_all("a"), List[String](["1", "2"]))
-    assert_equal(String(url.with_query(QueryParams({"b": "a b"}))), "https://example.com/?b=a%20b")
+    assert_equal(
+        String(url.with_query(QueryParams({"b": "a b"}))),
+        "https://example.com/?b=a%20b",
+    )
 
 
 def test_rfc3986_resolution() raises:
     var url = URL("http://a/b/c/d;p?q")
     var cases: List[Tuple[String, String]] = [
-        ("g", "http://a/b/c/g"), ("./g", "http://a/b/c/g"),
-        ("/g", "http://a/g"), ("//g", "http://g/"),
-        ("?y", "http://a/b/c/d;p?y"), ("#s", "http://a/b/c/d;p?q"),
-        ("g?y#s", "http://a/b/c/g?y"), ("..", "http://a/b/"),
-        ("../g", "http://a/b/g"), ("../../g", "http://a/g"),
-        ("../../../g", "http://a/g"), ("g/./h", "http://a/b/c/g/h"),
-        ("g/../h", "http://a/b/c/h"), ("g//h", "http://a/b/c/g//h"),
+        ("g", "http://a/b/c/g"),
+        ("./g", "http://a/b/c/g"),
+        ("/g", "http://a/g"),
+        ("//g", "http://g/"),
+        ("?y", "http://a/b/c/d;p?y"),
+        ("#s", "http://a/b/c/d;p?q"),
+        ("g?y#s", "http://a/b/c/g?y"),
+        ("..", "http://a/b/"),
+        ("../g", "http://a/b/g"),
+        ("../../g", "http://a/g"),
+        ("../../../g", "http://a/g"),
+        ("g/./h", "http://a/b/c/g/h"),
+        ("g/../h", "http://a/b/c/h"),
+        ("g//h", "http://a/b/c/g//h"),
         ("", "http://a/b/c/d;p?q"),
     ]
     for pair in cases:
@@ -37,10 +49,20 @@ def test_rfc3986_resolution() raises:
 
 
 def test_invalid_url() raises:
-    for value in ["/relative", "ftp://example.com", "http:///a", "http://user:secret@example.com", "http://example.com:0", "http://example.com:65536", "http://example.com:", "http://[bad]/", "http://example.com/%GG", "http://example.com/a\n"]:
+    for value in [
+        "/relative",
+        "ftp://example.com",
+        "http:///a",
+        "http://user:secret@example.com",
+        "http://example.com:0",
+        "http://example.com:65536",
+        "http://example.com:",
+        "http://[bad]/",
+        "http://example.com/%GG",
+        "http://example.com/a\n",
+    ]:
         with assert_raises():
             _ = URL(value)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

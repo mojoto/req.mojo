@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 from std.os import getenv
 from req._transports.default import (
     CurlStream,
@@ -42,5 +42,4 @@ def test_native_transport() raises:
     assert_equal(content, "hello world")
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

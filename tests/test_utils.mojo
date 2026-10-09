@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_raises
+from std.testing import assert_equal, assert_raises
 from req import encode_utf8, Bytes
 from req._utils import decode_utf8, percent_encode, percent_decode
 
@@ -20,5 +20,4 @@ def test_percent_encoding() raises:
             _ = percent_decode(value)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()

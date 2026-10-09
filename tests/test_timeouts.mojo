@@ -1,4 +1,4 @@
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 from std.os import getenv
 from req import Client, Timeout, ErrorKind, encode_utf8, Bytes
 
@@ -45,5 +45,4 @@ def test_connect_and_write_timeouts() raises:
     assert_true(caught)
 
 
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+comptime TEST_FUNCTIONS = __functions_in_module()
