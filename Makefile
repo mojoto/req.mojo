@@ -28,4 +28,6 @@ format:
 	$(MOJO) format req tests
 
 clean:
-	rm -rf build .req-test-*
+	rm -rf build .req-test-* __pycache__
+	find req tests tools -type d -name __pycache__ -prune -exec rm -rf {} +
+	find req tests tools -type f \( -name '*.pyc' -o -name '*.pyo' \) -exec rm -f {} +
