@@ -9,6 +9,19 @@ pixi install
 pixi run python benchmarks/run.py --baseline HEAD --sizes 128 65536
 ```
 
+To check for regressions against a release:
+
+```sh
+pixi run python benchmarks/run.py --baseline v0.1.0 --max-regression-percent 5
+```
+
+This exits with a failure if throughput loss or client CPU/request increase
+exceeds 5% in any scenario, checking both paired changes and the report's
+median values. Pairing compares adjacent baseline/current trials within each round. The report and
+`regression-check.json` remain available on failure. P99 is reported separately;
+the guard does not gate latency, and desktop background load still requires
+review or a repeat of borderline results.
+
 The runner compares a Git revision with the working tree. The `current` column
 reports the working-tree performance. Use `--baseline <ref>` for another
 revision, or `--baseline-source <directory>` for a snapshot containing `req/`.
@@ -19,6 +32,9 @@ pixi run python benchmarks/run.py --sizes 128 --concurrency 1 8 --rounds 1 --sec
 
 # 64 additional response headers
 pixi run python benchmarks/run.py --headers 64 --sizes 128 --concurrency 1 32
+
+# A different URL on every request, preserving the same origin and response
+pixi run python benchmarks/run.py --vary-url --sizes 128 --concurrency 1 32 --max-regression-percent 5
 
 # POST uploads; each response is 128 B
 for size in 128 65536 1048576; do
@@ -44,9 +60,9 @@ bytes and connection reuse. POST inputs are preallocated; the server checks
 the method, length and every uploaded byte. Each trial must have zero errors
 and reach its requested peak concurrency.
 
-## Current results
+## Recorded results before the performance optimization
 
-Measured on **2026-10-10 13:18–13:38 CST (UTC+8)**, using the current implementation:
+Measured on **2026-10-10 13:18–13:38 CST (UTC+8)**, using the frozen implementation identified in the raw-data directory below:
 
 | Environment | Value |
 | --- | --- |

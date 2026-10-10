@@ -80,10 +80,17 @@ struct HTTPTransport(BaseTransport):
         if self.is_closed():
             raise HTTPError(ErrorKind.ClientClosed, "Transport is closed")
         request.validate()
+        return self._handle_validated(request, timeout)
+
+    def _handle_validated(
+        mut self, request: Request, timeout: Timeout
+    ) raises HTTPError -> Response:
+        if self.is_closed():
+            raise HTTPError(ErrorKind.ClientClosed, "Transport is closed")
         timeout.validate()
 
         var headers = String()
-        for pair in request.headers.items():
+        for pair in request.headers._items._pairs:
             headers += pair[0] + (";" if not pair[1] else ": " + pair[1]) + "\n"
         var proxy = self._proxy.value() if self._proxy else (
             environment_proxy(

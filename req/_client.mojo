@@ -208,19 +208,22 @@ struct Client(Movable):
                 error.method = current.method
                 error.url = String(current.url)
                 raise error
-            current.validate()
             var started_at = perf_counter_ns()
             var response = self._transport.handle_request(
                 current, effective_timeout
             )
-            response.request = current
+            # Hooks and redirects need an independent snapshot; ordinary
+            # responses can take the prepared request after all raising work.
+            if self.event_hooks.response or response.is_redirect():
+                response.request = current
             response.url = current.url
             response.history = history
             response.next_request = None
             response._start_timing(started_at)
             response.cookies = CookieJar()
-            response.cookies.extract(response.headers, current.url)
-            self.cookies.extract(response.headers, current.url)
+            if "Set-Cookie" in response.headers:
+                response.cookies.extract(response.headers, current.url)
+                self.cookies.extract(response.headers, current.url)
             try:
                 for hook in self.event_hooks.response:
                     hook[](response)
@@ -251,6 +254,8 @@ struct Client(Movable):
                     response.next_request = next_request
                 if not stream:
                     response._read_content()
+                if not self.event_hooks.response:
+                    response.request = current^
                 return response^
             except error:
                 response.close()

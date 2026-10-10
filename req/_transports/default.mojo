@@ -6,7 +6,6 @@ from .._exceptions import HTTPError, ErrorKind
 from .._types import Bytes
 from .._config import Timeout, Limits
 from .._body import RequestBody
-from .._utils import decode_utf8
 from ._library import NativePool, Pool
 from .._streams import SyncByteStream
 
@@ -64,33 +63,34 @@ struct CurlStream(SyncByteStream):
         # Keep pointer origins through the FFI call so temporary strings remain
         # alive until libcurl has copied their contents.
         var upload_handle = body.value()._handle() if body else 0
-        try:
-            var transfer_new = pool.value()[].library.get_function[Int](
-                "req_transfer_new"
-            )
-            self.handle = transfer_new(
-                pool.value()[].handle,
-                method.as_c_string_span().ptr(),
-                url.as_c_string_span().ptr(),
-                headers.as_c_string_span().ptr(),
-                raw_pointer,
-                c_size_t(len(content.value()) if content else 0),
-                c_int(Bool(content)),
-                _seconds(timeout.connect),
-                _seconds(timeout.read),
-                _seconds(timeout.write),
-                c_int(verify),
-                ca.as_c_string_span().ptr(),
-                upload_handle,
-                _seconds(timeout.pool),
-                proxy.as_c_string_span().ptr(),
-                no_proxy.as_c_string_span().ptr(),
-                ca_path.as_c_string_span().ptr(),
-            )
-        except:
-            raise HTTPError(
-                ErrorKind.ConnectError, "Cannot initialize native HTTP transfer"
-            )
+        var transfer_new = pool.value()[].transfer_new
+        self.handle = transfer_new(
+            pool.value()[].handle,
+            method.as_c_string_span()
+            .ptr()
+            .unsafe_origin_cast[ImmutAnyOrigin](),
+            url.as_c_string_span().ptr().unsafe_origin_cast[ImmutAnyOrigin](),
+            headers.as_c_string_span()
+            .ptr()
+            .unsafe_origin_cast[ImmutAnyOrigin](),
+            raw_pointer.unsafe_origin_cast[ImmutAnyOrigin](),
+            c_size_t(len(content.value()) if content else 0),
+            c_int(Bool(content)),
+            _seconds(timeout.connect),
+            _seconds(timeout.read),
+            _seconds(timeout.write),
+            c_int(verify),
+            ca.as_c_string_span().ptr().unsafe_origin_cast[ImmutAnyOrigin](),
+            upload_handle,
+            _seconds(timeout.pool),
+            proxy.as_c_string_span().ptr().unsafe_origin_cast[ImmutAnyOrigin](),
+            no_proxy.as_c_string_span()
+            .ptr()
+            .unsafe_origin_cast[ImmutAnyOrigin](),
+            ca_path.as_c_string_span()
+            .ptr()
+            .unsafe_origin_cast[ImmutAnyOrigin](),
+        )
         if not self.handle:
             raise HTTPError(
                 ErrorKind.ConnectError, "Cannot initialize HTTP request"
@@ -118,9 +118,10 @@ struct CurlStream(SyncByteStream):
         var pointer = Pointer[UInt8, ImmutAnyOrigin](
             unsafe_from_address=address
         )
-        var bytes = Bytes(capacity=size)
-        bytes.extend(Span(unsafe_ptr=pointer, length=size))
-        return decode_utf8(bytes)
+        try:
+            return String(from_utf8=Span(unsafe_ptr=pointer, length=size))
+        except:
+            raise HTTPError(ErrorKind.DecodeError, "Invalid UTF-8 bytes")
 
     def read_chunk(
         mut self, max_bytes: Int

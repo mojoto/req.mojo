@@ -1,11 +1,32 @@
 """Load the packaged native bridge and retain it for active requests."""
 
-from std.ffi import OwnedDLHandle, RTLD, c_int
+from std.ffi import OwnedDLHandle, RTLD, c_int, c_size_t
 from std.memory import ArcPointer, Pointer
 from std.os import getenv
 from std.sys import CompilationTarget
 from .._config import Limits
 from .._exceptions import HTTPError, ErrorKind
+
+
+comptime _TransferNew = def(
+    Int,
+    Pointer[Int8, ImmutAnyOrigin],
+    Pointer[Int8, ImmutAnyOrigin],
+    Pointer[Int8, ImmutAnyOrigin],
+    Pointer[UInt8, ImmutAnyOrigin],
+    c_size_t,
+    c_int,
+    Float64,
+    Float64,
+    Float64,
+    c_int,
+    Pointer[Int8, ImmutAnyOrigin],
+    Int,
+    Float64,
+    Pointer[Int8, ImmutAnyOrigin],
+    Pointer[Int8, ImmutAnyOrigin],
+    Pointer[Int8, ImmutAnyOrigin],
+) thin abi("C") -> Int
 
 
 def _load_library() raises HTTPError -> OwnedDLHandle:
@@ -66,6 +87,7 @@ struct NativePool(Movable):
     var read: def(Int, Int, Int) thin abi("C") -> Int
     var read_raw: def(Int, Int, Int) thin abi("C") -> Int
     var free: def(Int) thin abi("C") -> NoneType
+    var transfer_new: _TransferNew
 
     def __init__(
         out self,
@@ -119,6 +141,9 @@ struct NativePool(Movable):
         )
         self.free = _symbol[type_of(self.free)](
             self.library, "req_transfer_free"
+        )
+        self.transfer_new = _symbol[_TransferNew](
+            self.library, "req_transfer_new"
         )
         var create = _symbol[
             def(Int, Int, Float64, c_int, c_int) thin abi("C") -> Int

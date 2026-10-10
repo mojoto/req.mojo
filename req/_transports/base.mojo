@@ -13,6 +13,12 @@ trait BaseTransport(Deinitable, Movable):
     ) raises HTTPError -> Response:
         ...
 
+    def _handle_validated(
+        mut self, request: Request, timeout: Timeout
+    ) raises HTTPError -> Response:
+        # Transport has validated the mutable request before dispatch.
+        return self.handle_request(request, timeout)
+
     def close(mut self):
         ...
 
@@ -22,7 +28,7 @@ def _handle[
 ](
     mut owner: _OwnedObject, request: Request, timeout: Timeout
 ) raises HTTPError -> Response:
-    return owner.pointer[T]()[].handle_request(request, timeout)
+    return owner.pointer[T]()[]._handle_validated(request, timeout)
 
 
 def _close[T: BaseTransport](mut owner: _OwnedObject):

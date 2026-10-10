@@ -200,13 +200,20 @@ int req_proxy_validate(const char *proxy) {
 
 typedef struct Transfer Transfer;
 typedef struct Connection Connection;
+typedef struct {
+    struct curl_slist *parts;
+    char *url;
+    size_t refs;
+} ConnectionKey;
 struct Connection {
     Connection *next;
     curl_socket_t socket;
+    char local_ip[INET6_ADDRSTRLEN], remote_ip[INET6_ADDRSTRLEN];
+    int local_port, remote_port, endpoints_cached;
     size_t users;
     double idle_since;
     int retired;
-    struct curl_slist *key;
+    ConnectionKey *key;
 };
 typedef struct {
     CURLM *multi;
@@ -225,7 +232,7 @@ struct Transfer {
     CURL *easy;
     Connection *connection;
     struct curl_slist *request_headers;
-    struct curl_slist *connection_key;
+    ConnectionKey *connection_key;
     unsigned char *upload;
     size_t upload_size;
     UploadBody *upload_body;
@@ -258,9 +265,64 @@ static void release_connection(Transfer *t) {
     t->connection = NULL;
 }
 
-static int same_key(struct curl_slist *a, struct curl_slist *b) {
+static ConnectionKey *retain_key(ConnectionKey *key) {
+    if (key) key->refs++;
+    return key;
+}
+
+static void release_key(ConnectionKey *key) {
+    if (key && !--key->refs) {
+        curl_slist_free_all(key->parts);
+        free(key->url);
+        free(key);
+    }
+}
+
+static int same_key(ConnectionKey *left, ConnectionKey *right) {
+    if (left == right) return 1;
+    struct curl_slist *a = left ? left->parts : NULL;
+    struct curl_slist *b = right ? right->parts : NULL;
     while (a && b && !strcmp(a->data, b->data)) { a = a->next; b = b->next; }
     return !a && !b;
+}
+
+static ConnectionKey *request_key(Pool *p, const char *url, const char *proxy,
+        const char *no_proxy, int verify, const char *ca_file, const char *ca_path,
+        int *error) {
+    const char *options[] = {proxy ? proxy : "", no_proxy ? no_proxy : "",
+                            verify ? "1" : "0", ca_file ? ca_file : "", ca_path ? ca_path : ""};
+    for (Connection *c = p->connections; c; c = c->next) {
+        if (!c->key || strcmp(c->key->url, url)) continue;
+        struct curl_slist *part = c->key->parts;
+        for (int i = 0; i < 3; i++) part = part->next;
+        size_t i = 0;
+        while (part && i < sizeof(options) / sizeof(options[0]) &&
+               !strcmp(part->data, options[i])) { part = part->next; i++; }
+        if (!part && i == sizeof(options) / sizeof(options[0])) return retain_key(c->key);
+    }
+    CURLU *parsed = curl_url();
+    char *scheme = NULL, *host = NULL, *port = NULL;
+    ConnectionKey *key = NULL;
+    *error = 6;
+    if (!parsed || curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK ||
+        curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) != CURLUE_OK ||
+        curl_url_get(parsed, CURLUPART_HOST, &host, 0) != CURLUE_OK ||
+        curl_url_get(parsed, CURLUPART_PORT, &port, CURLU_DEFAULT_PORT) != CURLUE_OK) goto cleanup;
+    *error = 4;
+    key = calloc(1, sizeof(*key));
+    if (!key) goto cleanup;
+    key->refs = 1;
+    key->url = strdup(url);
+    if (!key->url) { release_key(key); key = NULL; goto cleanup; }
+    const char *parts[] = {scheme, host, port, options[0], options[1], options[2], options[3], options[4]};
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        struct curl_slist *next = curl_slist_append(key->parts, parts[i]);
+        if (!next) { release_key(key); key = NULL; goto cleanup; }
+        key->parts = next;
+    }
+cleanup:
+    curl_free(scheme); curl_free(host); curl_free(port); curl_url_cleanup(parsed);
+    return key;
 }
 
 static int on_socket(void *context, curl_socket_t socket, curlsocktype purpose) {
@@ -283,27 +345,38 @@ static int on_close_socket(void *context, curl_socket_t socket) {
         for (Transfer *t = p->head; t; t = t->next)
             if (t->connection == connection) t->connection = NULL;
         *link = connection->next;
-        curl_slist_free_all(connection->key);
+        release_key(connection->key);
         free(connection);
     }
     return close(socket);
 }
 
-static int endpoint_matches(struct sockaddr_storage *address, const char *ip, int port) {
-    char text[INET6_ADDRSTRLEN];
+static int endpoint(struct sockaddr_storage *address, char *text, int *port) {
     const void *bytes;
-    int actual_port;
     if (address->ss_family == AF_INET) {
         struct sockaddr_in *v4 = (struct sockaddr_in *)address;
         bytes = &v4->sin_addr;
-        actual_port = ntohs(v4->sin_port);
+        *port = ntohs(v4->sin_port);
     } else if (address->ss_family == AF_INET6) {
         struct sockaddr_in6 *v6 = (struct sockaddr_in6 *)address;
         bytes = &v6->sin6_addr;
-        actual_port = ntohs(v6->sin6_port);
+        *port = ntohs(v6->sin6_port);
     } else return 0;
-    return actual_port == port && inet_ntop(address->ss_family, bytes, text, sizeof(text)) &&
-           !strcmp(text, ip);
+    return inet_ntop(address->ss_family, bytes, text, INET6_ADDRSTRLEN) != NULL;
+}
+
+static int cache_endpoints(Connection *c) {
+    if (c->endpoints_cached) return 1;
+    struct sockaddr_storage local, remote;
+    socklen_t local_size = sizeof(local), remote_size = sizeof(remote);
+    if (getsockname(c->socket, (struct sockaddr *)&local, &local_size) ||
+        getpeername(c->socket, (struct sockaddr *)&remote, &remote_size) ||
+        !endpoint(&local, c->local_ip, &c->local_port) ||
+        !endpoint(&remote, c->remote_ip, &c->remote_port)) return 0;
+    /* Endpoints remain fixed until on_close_socket removes this connection.
+       Failed probes are retried; a reused descriptor gets a fresh record. */
+    c->endpoints_cached = 1;
+    return 1;
 }
 
 static int on_request(void *context, char *remote_ip, char *local_ip,
@@ -311,25 +384,12 @@ static int on_request(void *context, char *remote_ip, char *local_ip,
     Transfer *t = context;
     release_connection(t); /* A retry may have selected another connection. */
     for (Connection *c = t->pool->connections; c; c = c->next) {
-        struct sockaddr_storage local, remote;
-        socklen_t local_size = sizeof(local), remote_size = sizeof(remote);
-        if (!getsockname(c->socket, (struct sockaddr *)&local, &local_size) &&
-            !getpeername(c->socket, (struct sockaddr *)&remote, &remote_size) &&
-            endpoint_matches(&local, local_ip, local_port) &&
-            endpoint_matches(&remote, remote_ip, remote_port)) {
-            if (!same_key(c->key, t->connection_key)) {
-                struct curl_slist *key = NULL;
-                for (struct curl_slist *part = t->connection_key; part; part = part->next) {
-                    struct curl_slist *next = curl_slist_append(key, part->data);
-                    if (!next) {
-                        curl_slist_free_all(key);
-                        t->error = 3;
-                        return CURL_PREREQFUNC_ABORT;
-                    }
-                    key = next;
-                }
-                curl_slist_free_all(c->key);
-                c->key = key;
+        if (cache_endpoints(c) && c->local_port == local_port &&
+            c->remote_port == remote_port && !strcmp(c->local_ip, local_ip) &&
+            !strcmp(c->remote_ip, remote_ip)) {
+            if (c->key != t->connection_key) {
+                release_key(c->key);
+                c->key = retain_key(t->connection_key);
             }
             t->connection = c;
             c->users++;
@@ -626,13 +686,7 @@ static void admit_transfers(Pool *p) {
                 !multiplex && needs_fresh_connection(t) ? 1L : 0L) != CURLE_OK) {
             finish(t, 6); continue;
         }
-        if (curl_multi_setopt(p->multi, CURLMOPT_MAXCONNECTS,
-                (long)(p->max_keepalive ? p->max_keepalive : 1)) != CURLM_OK ||
-            curl_multi_setopt(p->multi, CURLMOPT_MAX_TOTAL_CONNECTIONS,
-                (long)p->max_connections) != CURLM_OK ||
-            curl_multi_setopt(p->multi, CURLMOPT_PIPELINING,
-                p->http2 ? CURLPIPE_MULTIPLEX : CURLPIPE_NOTHING) != CURLM_OK ||
-            curl_multi_add_handle(p->multi, t->easy) != CURLM_OK) {
+        if (curl_multi_add_handle(p->multi, t->easy) != CURLM_OK) {
             finish(t, 6); continue;
         }
         t->admitted = 1;
@@ -713,6 +767,16 @@ void *req_pool_new(size_t max_connections, size_t max_keepalive, double keepaliv
     p->max_connections = max_connections;
     p->max_keepalive = max_connections && max_keepalive > max_connections ? max_connections : max_keepalive;
     p->keepalive_expiry = keepalive_expiry;
+    if (curl_multi_setopt(p->multi, CURLMOPT_MAXCONNECTS,
+            (long)(p->max_keepalive ? p->max_keepalive : 1)) != CURLM_OK ||
+        curl_multi_setopt(p->multi, CURLMOPT_MAX_TOTAL_CONNECTIONS,
+            (long)p->max_connections) != CURLM_OK ||
+        curl_multi_setopt(p->multi, CURLMOPT_PIPELINING,
+            p->http2 ? CURLPIPE_MULTIPLEX : CURLPIPE_NOTHING) != CURLM_OK) {
+        curl_multi_cleanup(p->multi);
+        free(p);
+        return NULL;
+    }
     return p;
 }
 
@@ -794,27 +858,9 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     SET(CURLOPT_XFERINFOFUNCTION, on_progress);
     SET(CURLOPT_XFERINFODATA, t);
     SET(CURLOPT_PRIVATE, t);
-    {
-        CURLU *parsed = curl_url();
-        char *scheme = NULL, *host = NULL, *port = NULL;
-        if (!parsed || curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK ||
-            curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) != CURLUE_OK ||
-            curl_url_get(parsed, CURLUPART_HOST, &host, 0) != CURLUE_OK ||
-            curl_url_get(parsed, CURLUPART_PORT, &port, CURLU_DEFAULT_PORT) != CURLUE_OK) {
-            curl_free(scheme); curl_free(host); curl_free(port); curl_url_cleanup(parsed);
-            finish(t, 6); return t;
-        }
-        const char *keys[] = {scheme, host, port, proxy, no_proxy, verify ? "1" : "0",
-                              ca_file ? ca_file : "", ca_path ? ca_path : ""};
-        int failed = 0;
-        for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
-            struct curl_slist *next = curl_slist_append(t->connection_key, keys[i]);
-            if (!next) { failed = 1; break; }
-            t->connection_key = next;
-        }
-        curl_free(scheme); curl_free(host); curl_free(port); curl_url_cleanup(parsed);
-        if (failed) { finish(t, 4); return t; }
-    }
+    int key_error;
+    t->connection_key = request_key(p, url, proxy, no_proxy, verify, ca_file, ca_path, &key_error);
+    if (!t->connection_key) { finish(t, key_error); return t; }
     char *copy = strdup(headers);
     if (!copy) { finish(t, 4); return t; }
     char *save = NULL;
@@ -1018,7 +1064,7 @@ void req_transfer_free(void *handle) {
     while (*link && *link != t) link = &(*link)->next;
     if (*link) *link = t->next;
     curl_slist_free_all(t->request_headers);
-    curl_slist_free_all(t->connection_key);
+    release_key(t->connection_key);
     for (int i = 0; i < t->decoder_count; i++) {
         if (t->decoders[i].initialized) inflateEnd(&t->decoders[i].stream);
         clear_probe(&t->decoders[i]);

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -55,6 +56,35 @@ def summarize(rows):
     return summaries
 
 
+def find_regressions(rows, limit):
+    scenarios = {}
+    for row in rows:
+        scenario = scenarios.setdefault((row['bytes'], row['concurrency']), {})
+        scenario.setdefault(row['repeat'], {})[row['variant']] = row
+    failures = []
+    for (size, concurrency), trials in sorted(scenarios.items()):
+        qps_changes, cpu_changes = [], []
+        for pair in trials.values():
+            before, after = pair['baseline'], pair['current']
+            qps_changes.append((after['qps'] / before['qps'] - 1) * 100)
+            before_cpu = before['client_cpu_us'] / before['requests']
+            after_cpu = after['client_cpu_us'] / after['requests']
+            cpu_changes.append((after_cpu / before_cpu - 1) * 100)
+        qps, cpu = statistics.median(qps_changes), statistics.median(cpu_changes)
+        before = [pair['baseline'] for pair in trials.values()]
+        after = [pair['current'] for pair in trials.values()]
+        aggregate_qps = (statistics.median(r['qps'] for r in after) /
+                         statistics.median(r['qps'] for r in before) - 1) * 100
+        aggregate_cpu = (statistics.median(r['client_cpu_us'] / r['requests'] for r in after) /
+                         statistics.median(r['client_cpu_us'] / r['requests'] for r in before) - 1) * 100
+        # Both the paired comparison and the report's medians must pass.
+        qps, cpu = min(qps, aggregate_qps), max(cpu, aggregate_cpu)
+        if qps < -limit or cpu > limit:
+            failures.append(dict(bytes=size, concurrency=concurrency,
+                                 qps_change_percent=qps, cpu_change_percent=cpu))
+    return failures
+
+
 def report(summaries, args, commit):
     lines = [
         '# HTTP performance comparison', '',
@@ -62,6 +92,7 @@ def report(summaries, args, commit):
         f'{args.rounds} rounds of {args.seconds} seconds per variant and scenario; fixed random order.',
         'HTTP/1.1 keep-alive; one Client/pool per OS worker; same server and payload.',
         f'{args.headers} additional response headers per request.',
+        'A unique URL query is used for each request.' if getattr(args, 'vary_url', False) else 'The request URL is fixed within each trial.',
         f'POST with {args.upload_size} upload bytes; the server checks every byte.' if args.upload_size else 'GET without a request body.',
         'Each request reads the full body and checks status, length, boundary bytes, and connection identity.',
         'Warm-up checks every byte. Latency samples cover one in every 16 requests.', '',
@@ -108,12 +139,19 @@ def main():
     parser.add_argument('--sizes', type=int, nargs='+', default=[128, 4096, 65536], choices=[128, 4096, 65536, 1048576])
     parser.add_argument('--concurrency', type=int, nargs='+', default=[1, 8, 32, 128])
     parser.add_argument('--headers', type=int, default=0, help='Additional response headers (0-128)')
+    parser.add_argument('--vary-url', action='store_true', help='Use a unique URL query per request to exercise connection-key cache misses')
     parser.add_argument('--upload-size', type=int, default=0, choices=[0, 128, 65536, 1048576], help='POST upload bytes; 0 selects GET')
+    parser.add_argument('--max-regression-percent', type=float,
+                        help='Fail on paired-median throughput loss or CPU/request increase above this percentage')
     args = parser.parse_args()
     if args.rounds < 1 or args.seconds < 1 or any(c < 1 or c > 128 for c in args.concurrency):
         parser.error('rounds/seconds must be positive and concurrency must be between 1 and 128')
     if not 0 <= args.headers <= 128:
         parser.error('headers must be between 0 and 128')
+    if args.max_regression_percent is not None and (
+        not math.isfinite(args.max_regression_percent) or args.max_regression_percent < 0
+    ):
+        parser.error('max-regression-percent must be finite and nonnegative')
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     output = (args.output or ROOT / 'build/performance' / timestamp).resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -162,7 +200,7 @@ def main():
         'mojo': run(['pixi', 'run', 'mojo', '--version'], capture_output=True, text=True).stdout.strip(),
         'go': run(['go', 'version'], capture_output=True, text=True).stdout.strip(),
         'c_flags': flags, 'mojo_flags': ['--Werror', '-O3'], 'seed': 20261010,
-        'settings': {'rounds': args.rounds, 'seconds': args.seconds, 'sizes': args.sizes, 'concurrency': args.concurrency, 'headers': args.headers, 'upload_size': args.upload_size},
+        'settings': {'rounds': args.rounds, 'seconds': args.seconds, 'sizes': args.sizes, 'concurrency': args.concurrency, 'headers': args.headers, 'upload_size': args.upload_size, 'vary_url': args.vary_url},
         'source_sha256': {str(p.relative_to(output)): digest(p) for p in output.rglob('*') if p.is_file() and p.suffix in ('.mojo', '.c', '.go', '.py')},
         'binary_sha256': {name: digest(output / name) for name in ['baseline-client', 'current-client', 'server']},
         'native_sha256': {variant: digest(Path(path)) for variant, path in native_libraries.items()},
@@ -185,6 +223,7 @@ def main():
                             rng.shuffle(order)
                             for variant in order:
                                 env = os.environ | {'BENCH_URL': f'http://{address}/keep/{size}', 'BENCH_SIZE': str(size), 'BENCH_CONCURRENCY': str(concurrency), 'BENCH_SECONDS': str(args.seconds), 'BENCH_HEADERS': str(args.headers), 'BENCH_UPLOAD_SIZE': str(args.upload_size)}
+                                env['BENCH_VARY_URL'] = '1' if args.vary_url else '0'
                                 env.pop('REQ_NATIVE_LIB', None)
                                 if variant in native_libraries:
                                     env['REQ_NATIVE_LIB'] = native_libraries[variant]
@@ -208,6 +247,14 @@ def main():
     (output / 'summary.json').write_text(json.dumps(summaries, indent=2) + '\n')
     (output / 'REPORT.md').write_text(report(summaries, args, identity))
     print(f'Report: {output / "REPORT.md"}', flush=True)
+    if args.max_regression_percent is not None:
+        failures = find_regressions(rows, args.max_regression_percent)
+        guard = dict(max_regression_percent=args.max_regression_percent,
+                     passed=not failures, failures=failures)
+        (output / 'regression-check.json').write_text(json.dumps(guard, indent=2) + '\n')
+        if failures:
+            raise SystemExit('Performance regression check failed: ' + json.dumps(failures))
+        print(f'Performance regression check passed ({args.max_regression_percent:g}% tolerance)', flush=True)
 
 
 if __name__ == '__main__':

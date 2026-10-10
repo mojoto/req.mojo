@@ -7,6 +7,7 @@ from req import Client, HTTPError, ErrorKind, Bytes
 def worker(index: c_long) abi("C") -> c_int:
     try:
         var url = getenv("BENCH_URL")
+        var vary_url = getenv("BENCH_VARY_URL") == "1"
         var size = Int(getenv("BENCH_SIZE"))
         var header_count = 0
         var configured = getenv("BENCH_HEADERS")
@@ -19,8 +20,10 @@ def worker(index: c_long) abi("C") -> c_int:
             method = "POST"
             upload = Bytes(length=Int(upload_size), fill=120)
         var client = Client()
-        for _ in range(30):
-            var warm = client.request(method, url, content=upload)
+        for warmup in range(30):
+            var warm = client.request(
+                method, url + "?request=" + String(warmup), content=upload
+            ) if vary_url else client.request(method, url, content=upload)
             if warm.status_code != 200 or len(warm.content()) != size:
                 raise HTTPError(
                     ErrorKind.InvalidRequest, "Invalid warmup response"
@@ -48,7 +51,9 @@ def worker(index: c_long) abi("C") -> c_int:
             ]() if sampled else UInt64(0)
             external_call["bench_enter", NoneType]()
             try:
-                var response = client.request(method, url, content=upload)
+                var response = client.request(
+                    method, url + "?request=" + String(count), content=upload
+                ) if vary_url else client.request(method, url, content=upload)
                 var body = response.content()
                 if response.status_code != 200 or len(body) != size:
                     raise HTTPError(

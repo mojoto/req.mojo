@@ -4,6 +4,10 @@ from std.math import isfinite
 from ._exceptions import HTTPError, ErrorKind
 
 
+def _invalid_timeout(value: Optional[Float64]) -> Bool:
+    return Bool(value) and (not isfinite(value.value()) or value.value() <= 0)
+
+
 struct Timeout(ImplicitlyCopyable):
     var connect: Optional[Float64]
     var read: Optional[Float64]
@@ -47,12 +51,16 @@ struct Timeout(ImplicitlyCopyable):
         return result^
 
     def validate(self) raises HTTPError:
-        for field in [self.connect, self.read, self.write, self.pool]:
-            if field and (not isfinite(field.value()) or field.value() <= 0):
-                raise HTTPError(
-                    ErrorKind.InvalidRequest,
-                    "Timeout must be finite and positive or disabled",
-                )
+        if (
+            _invalid_timeout(self.connect)
+            or _invalid_timeout(self.read)
+            or _invalid_timeout(self.write)
+            or _invalid_timeout(self.pool)
+        ):
+            raise HTTPError(
+                ErrorKind.InvalidRequest,
+                "Timeout must be finite and positive or disabled",
+            )
 
 
 struct Limits(ImplicitlyCopyable):

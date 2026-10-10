@@ -7,7 +7,7 @@ NATIVE_FLAGS := $(if $(filter Darwin,$(shell uname -s)),-dynamiclib,-shared)
 
 DOCS_DIR := website
 
-.PHONY: install install-hooks native test-deps test test-package build format clean doc-install doc-start doc-build doc-serve doc-clean
+.PHONY: install install-hooks native test-native test-deps test test-package build format clean doc-install doc-start doc-build doc-serve doc-clean
 
 install:
 	pixi install
@@ -33,7 +33,11 @@ test-deps:
 	$(PYTHON) -m ensurepip
 	$(PYTHON) -m pip install -r tests/requirements.txt
 
-test: native
+test-native: native
+	$(CC) $(CFLAGS) tests/native/connection_endpoints.c -lcurl -lz -o build/connection-endpoints
+	build/connection-endpoints
+
+test: test-native
 	REQ_MOJO="$(MOJO)" REQ_MOJO_FLAGS="$(MOJO_FLAGS)" $(PYTHON) tests/run_tests.py $(TEST_ARGS)
 
 build: native

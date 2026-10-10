@@ -56,7 +56,7 @@ struct Request(ImplicitlyCopyable):
         var upper = method.upper()
         self.method = (
             upper if upper
-            in [
+            in (
                 "GET",
                 "HEAD",
                 "POST",
@@ -64,7 +64,7 @@ struct Request(ImplicitlyCopyable):
                 "PATCH",
                 "DELETE",
                 "OPTIONS",
-            ] else method
+            ) else method
         )
         self.url = _url^
         self.headers = _headers^
@@ -93,7 +93,11 @@ struct Request(ImplicitlyCopyable):
             )
         if self.body:
             _ = self.body.value()._handle()
-        if self.method.upper() == "HEAD" and (self.content or self.body):
+        if (
+            (self.content or self.body)
+            and self.method.byte_length() == 4
+            and self.method.upper() == "HEAD"
+        ):
             raise HTTPError(
                 ErrorKind.InvalidRequest, "HEAD requests cannot have a body"
             )
@@ -139,6 +143,7 @@ struct Response(Movable):
     var _elapsed_seconds: Optional[Float64]
     var _content: Bytes
     var _stream: Optional[ByteStream]
+    var _native_stream: Optional[CurlStream]
     var _cached: Bool
     var _consumed: Bool
     var _eof: Bool
@@ -150,7 +155,7 @@ struct Response(Movable):
         status_code: Int,
         *,
         request: Request,
-        headers: Headers = Headers(),
+        var headers: Headers = Headers(),
         content: Bytes = Bytes(),
         reason_phrase: String = "",
         http_version: String = "HTTP/1.1",
@@ -161,16 +166,17 @@ struct Response(Movable):
         self.reason_phrase = reason_phrase
         self.http_version = http_version
         self.url = request.url
-        self.headers = headers
+        self.headers = headers^
         self.request = request
         self.history = ResponseHistory()
         self.next_request = None
         self.cookies = CookieJar()
-        self.cookies.extract(headers, request.url)
+        self.cookies.extract(self.headers, request.url)
         self._started_at = None
         self._elapsed_seconds = None
         self._content = content.copy() if request.method != "HEAD" else Bytes()
         self._stream = None
+        self._native_stream = None
         self._cached = True
         self._consumed = False
         self._eof = False
@@ -182,7 +188,7 @@ struct Response(Movable):
         var source: CurlStream, request: Request
     ) raises HTTPError -> Self:
         var lines = source.headers().split("\r\n")
-        var status = String(lines[0]).split(" ", maxsplit=2)
+        var status = lines[0].split(" ", maxsplit=2)
         if len(status) < 2:
             raise HTTPError(
                 ErrorKind.ProtocolError, "Missing response status line"
@@ -198,20 +204,20 @@ struct Response(Movable):
         for i in range(1, len(lines)):
             if not lines[i]:
                 break
-            var pair = String(lines[i]).split(":", maxsplit=1)
+            var pair = lines[i].split(":", maxsplit=1)
             if len(pair) != 2:
                 raise HTTPError(
                     ErrorKind.ProtocolError, "Invalid response header"
                 )
-            headers.add(String(pair[0]), String(String(pair[1]).strip()))
+            headers.add(String(pair[0]), String(pair[1].strip()))
         var response = Self(
             code,
             request=request,
-            headers=headers,
+            headers=headers^,
             reason_phrase=String(status[2]) if len(status) == 3 else String(),
             http_version=String(status[0]),
         )
-        response._stream = ByteStream(source^)
+        response._native_stream = source^
         response._cached = False
         return response^
 
@@ -255,7 +261,7 @@ struct Response(Movable):
         mut self, size: Int
     ) raises HTTPError -> Optional[Bytes]:
         try:
-            var result = self._stream.value().read_chunk(size)
+            var result = self._pull_chunk(size)
             if not result:
                 self.close()
             return result^
@@ -264,6 +270,17 @@ struct Response(Movable):
             error.method = self.request.method
             error.url = String(self.url)
             raise error
+
+    def _pull_chunk(
+        mut self, size: Int, *, raw: Bool = False
+    ) raises HTTPError -> Optional[Bytes]:
+        if self._native_stream:
+            return (
+                self._native_stream.value()
+                .read_raw_chunk(size) if raw else self._native_stream.value()
+                .read_chunk(size)
+            )
+        return self._stream.value().read_chunk(size, raw=raw)
 
     def content(self) raises HTTPError -> Bytes:
         self._require_content()
@@ -274,11 +291,22 @@ struct Response(Movable):
             if self._consumed or self.is_closed():
                 self._require_content()
             try:
-                while True:
-                    var chunk = self._stream.value().read_chunk(16384)
-                    if not chunk:
-                        break
-                    self._content.extend(Span(chunk.value()))
+                if self._native_stream:
+                    # Full reads can reuse one buffer across all native chunks.
+                    var buffer = Bytes(length=16384, fill=0)
+                    while True:
+                        var count = self._native_stream.value()._read_into(
+                            buffer
+                        )
+                        if count == 0:
+                            break
+                        self._content.extend(Span(buffer)[:count])
+                else:
+                    while True:
+                        var chunk = self._pull_chunk(16384)
+                        if not chunk:
+                            break
+                        self._content.extend(Span(chunk.value()))
             except error:
                 self.close()
                 error.method = self.request.method
@@ -394,7 +422,7 @@ struct Response(Movable):
 
     def is_redirect(self) -> Bool:
         return (
-            self.status_code in [301, 302, 303, 307, 308]
+            self.status_code in (301, 302, 303, 307, 308)
             and "Location" in self.headers
         )
 
@@ -435,11 +463,15 @@ struct Response(Movable):
         return self._elapsed_seconds.value()
 
     def close(mut self):
+        if self._native_stream:
+            self._native_stream.value().close()
         if self._stream:
             self._stream.value().close()
         self._finish_timing()
 
     def is_closed(self) -> Bool:
+        if self._native_stream:
+            return not Bool(self._native_stream.value().handle)
         return not self._stream or self._stream.value().is_closed()
 
     def __enter__(
@@ -647,10 +679,8 @@ struct _ByteIterator[o: Origin[mut=True]](Movable):
         else:
             try:
                 while len(result) < self._size:
-                    var chunk = (
-                        self._response[]
-                        ._stream.value()
-                        .read_chunk(self._size - len(result), raw=self._raw)
+                    var chunk = self._response[]._pull_chunk(
+                        self._size - len(result), raw=self._raw
                     )
                     if not chunk:
                         self._response[]._eof = True
