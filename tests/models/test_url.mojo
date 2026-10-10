@@ -1,5 +1,6 @@
 from std.testing import assert_equal, assert_raises
 from req import URL, QueryParams
+from req._urls import _url_component
 
 
 def test_url_components() raises:
@@ -11,6 +12,29 @@ def test_url_components() raises:
     assert_equal(
         String(URL("http://example.com/?a=%2f")), "http://example.com/?a=%2f"
     )
+
+
+def test_url_component_ascii_fast_path_boundaries() raises:
+    var digits = String("0123456789ABCDEF")
+    for code in range(128):
+        var text = String(chr(code))
+        if code < 32 or code in [37, 92, 127]:
+            with assert_raises():
+                _ = _url_component("prefix" + text + "suffix")
+        else:
+            var expected = text
+            if code in [32, 34, 60, 62, 94, 96, 123, 124, 125]:
+                expected = (
+                    "%"
+                    + String(digits[byte=code // 16])
+                    + String(digits[byte=code % 16])
+                )
+            assert_equal(
+                _url_component("prefix" + text + "suffix"),
+                "prefix" + expected + "suffix",
+            )
+    assert_equal(_url_component("a%2fb%FF"), "a%2fb%FF")
+    assert_equal(_url_component("ok雪"), "ok%E9%9B%AA")
 
 
 def test_url_query_params() raises:

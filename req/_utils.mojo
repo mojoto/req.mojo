@@ -9,8 +9,7 @@ comptime StringPairs = List[Tuple[String, String]]
 
 def encode_utf8(text: String) -> Bytes:
     var result = Bytes(capacity=text.byte_length())
-    for byte in text.as_bytes():
-        result.append(byte)
+    result.extend(text.as_bytes())
     return result^
 
 
@@ -122,7 +121,29 @@ struct MultiItems[ignore_case: Bool](ImplicitlyCopyable, Sized):
 
     def _matches(self, left: String, right: String) -> Bool:
         comptime if Self.ignore_case:
-            return left.lower() == right.lower()
+            if left == right:
+                return True
+            var a = left.as_bytes()
+            var b = right.as_bytes()
+            if len(a) != len(b):
+                # Stored header names are ASCII tokens; Unicode lookups keep
+                # the existing String.lower() behavior.
+                for byte in b:
+                    if byte > 127:
+                        return left.lower() == right.lower()
+                return False
+            for i in range(len(a)):
+                var x = a[i]
+                var y = b[i]
+                if x > 127 or y > 127:
+                    return left.lower() == right.lower()
+                if x >= 65 and x <= 90:
+                    x += 32
+                if y >= 65 and y <= 90:
+                    y += 32
+                if x != y:
+                    return False
+            return True
         else:
             return left == right
 
