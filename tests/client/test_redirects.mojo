@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, assert_raises
 from std.os import getenv
-from req import Client, Headers, Auth, encode_utf8
+from req import Client, Headers, Auth, Bytes, encode_utf8
 from req._utils import percent_encode
 
 
@@ -58,6 +58,21 @@ def test_redirect_origin_and_limits() raises:
     )
     with assert_raises():
         _ = none.get("/redirect")
+
+
+def test_binary_upload_replays_307_and_308() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"), follow_redirects=True)
+    var body = Bytes(capacity=65537)
+    for i in range(65537):
+        body.append(UInt8(i % 251))
+    var next = percent_encode("/redirect?code=308&to=/echo-bytes")
+    var response = client.post(
+        "/redirect?code=307&to=" + next, content=body.copy()
+    )
+    assert_equal(response.content(), body)
+    assert_equal(response.request.content.value(), body)
+    assert_equal(response.request.method, "POST")
+    assert_equal(response.url.path(), "/echo-bytes")
 
 
 def test_redirect_cookie_selection_and_request_edits() raises:

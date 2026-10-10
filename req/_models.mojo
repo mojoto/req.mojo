@@ -75,6 +75,20 @@ struct Request(ImplicitlyCopyable):
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
     ) raises HTTPError:
+        var target = URL(url)
+        var body: Optional[Bytes] = None
+        if content:
+            body = content.value().copy()
+        self = Self(method, _url=target^, _headers=headers, _content=body^)
+
+    def __init__(
+        out self,
+        method: String,
+        *,
+        var _url: URL,
+        var _headers: Headers,
+        var _content: Optional[Bytes],
+    ) raises HTTPError:
         var upper = method.upper()
         self.method = (
             upper if upper
@@ -88,12 +102,10 @@ struct Request(ImplicitlyCopyable):
                 "OPTIONS",
             ] else method
         )
-        self.url = URL(url)
-        self.headers = headers
-        self.content = None
+        self.url = _url^
+        self.headers = _headers^
+        self.content = _content^
         self._cookie_from_jar = None
-        if content:
-            self.content = content.value().copy()
         self.validate()
 
     def __init__(out self, *, copy: Self):
@@ -248,18 +260,26 @@ struct Response(Movable):
         self._require_content()
         return self._content.copy()
 
-    def read(mut self) raises HTTPError -> Bytes:
+    def _read_content(mut self) raises HTTPError:
         if not self._cached:
             if self._consumed or self.is_closed():
                 self._require_content()
-            while True:
-                var chunk = self._read_stream_chunk(16384)
-                if not chunk:
-                    break
-                for byte in chunk.value():
-                    self._content.append(byte)
+            var buffer = Bytes(length=16384, fill=0)
+            try:
+                while True:
+                    var count = self._stream.value()._read_into(buffer)
+                    if count == 0:
+                        break
+                    self._content.extend(Span(buffer)[:count])
+            except error:
+                error.method = self.request.method
+                error.url = String(self.url)
+                raise error
             self._cached = True
             self._eof = True
+
+    def read(mut self) raises HTTPError -> Bytes:
+        self._read_content()
         return self._content.copy()
 
     def read_chunk(
@@ -276,8 +296,7 @@ struct Response(Movable):
             var end = self._offset + min(
                 max_bytes, len(self._content) - self._offset
             )
-            for i in range(self._offset, end):
-                bytes.append(self._content[i])
+            bytes.extend(Span(self._content)[self._offset : end])
             self._offset = end
             return bytes^
         if self._eof:

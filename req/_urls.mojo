@@ -31,6 +31,17 @@ def _validate_url_text(text: String) raises HTTPError:
 def _url_component(
     text: String, *, query: Bool = False
 ) raises HTTPError -> String:
+    var unchanged = True
+    for byte in text.as_bytes():
+        if (
+            byte < 32
+            or byte >= 127
+            or Int(byte) in [32, 34, 37, 60, 62, 92, 94, 96, 123, 124, 125]
+        ):
+            unchanged = False
+            break
+    if unchanged:
+        return text
     var result = String()
     var i = 0
     while i < text.byte_length():

@@ -48,6 +48,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path.path == "/echo-headers":
             values = self.headers.get_all("X-Repeated", [])
             self.respond(json.dumps({"values": values}).encode(), headers=[("Content-Type", "application/json")])
+        elif path.path == "/headers-growth":
+            self.wfile.write(b"HTTP/1.1 103 Early Hints\r\nX-Interim: ignored\r\n\r\n")
+            count = 64 if query.get("overflow") else 60
+            headers = [(f"X-Growth-{i}", "v" * 4096) for i in range(count)]
+            headers += [("X-Repeated", "first"), ("X-Repeated", "second")]
+            self.respond(b"ok", headers=headers)
         elif path.path == "/redirect":
             self.respond(status=int(query.get("code", ["302"])[0]), headers=[("Location", query.get("to", ["/echo"])[0])])
         elif path.path == "/redirect-chain":
@@ -78,12 +84,16 @@ class Handler(BaseHTTPRequestHandler):
             elif kind == "multi-raw":
                 compressor = zlib.compressobj(wbits=-zlib.MAX_WBITS)
                 encoded = gzip.compress(compressor.compress(plain) + compressor.flush())
+            elif kind in ["five", "six"]:
+                encoded = plain
+                for _ in range(5 if kind == "five" else 6):
+                    encoded = gzip.compress(encoded)
             elif kind == "ambiguous-deflate":
                 plain = b"A" * 156
                 encoded = b"\x78\x9c\x00\x63\xff" + plain + b"\x03\x00"
             else:
                 encoded = plain
-            encoding = {"raw-deflate": "deflate", "ambiguous-deflate": "deflate", "multi": "deflate, gzip", "multi-raw": "deflate, gzip"}.get(kind, kind)
+            encoding = {"raw-deflate": "deflate", "ambiguous-deflate": "deflate", "multi": "deflate, gzip", "multi-raw": "deflate, gzip", "five": ", ".join(["gzip"] * 5), "six": ", ".join(["gzip"] * 6)}.get(kind, kind)
             if query.get("invalid"):
                 encoded = b"invalid"
             if query.get("zero"):

@@ -35,14 +35,14 @@ struct Transfer {
     unsigned char *upload;
     size_t upload_size;
     char *headers;
-    size_t header_size;
+    size_t header_size, header_capacity;
     unsigned char body[CURL_MAX_WRITE_SIZE];
     size_t body_size, body_offset;
     int header_ready, paused, receiving, done, error, connected;
     double connect_timeout, read_timeout, write_timeout;
     double started, last_read, last_write;
     curl_off_t downloaded, uploaded;
-    Decoder decoders[MAX_DECODERS];
+    Decoder *decoders;
     int decoder_count;
 };
 
@@ -72,6 +72,7 @@ static void finish(Transfer *t, int error) {
 }
 
 static int configure_decoders(Transfer *t) {
+    int encodings[MAX_DECODERS], count = 0;
     char *headers = strdup(t->headers);
     if (!headers) return 3;
     char *save = NULL;
@@ -86,20 +87,21 @@ static int configure_decoders(Transfer *t) {
             while (length && (encoding[length - 1] == ' ' || encoding[length - 1] == '\t'))
                 encoding[--length] = 0;
             if (!strcasecmp(encoding, "identity")) continue;
-            if (t->decoder_count == MAX_DECODERS ||
+            if (count == MAX_DECODERS ||
                 (strcasecmp(encoding, "gzip") && strcasecmp(encoding, "deflate"))) {
                 free(headers);
                 return 13;
             }
-            t->decoders[t->decoder_count++].gzip = !strcasecmp(encoding, "gzip");
+            encodings[count++] = !strcasecmp(encoding, "gzip");
         }
     }
     free(headers);
-    for (int i = 0; i < t->decoder_count / 2; i++) {
-        int j = t->decoder_count - i - 1;
-        int gzip = t->decoders[i].gzip;
-        t->decoders[i].gzip = t->decoders[j].gzip;
-        t->decoders[j].gzip = gzip;
+    if (count) {
+        t->decoders = calloc((size_t)count, sizeof(*t->decoders));
+        if (!t->decoders) return 3;
+        t->decoder_count = count;
+        for (int i = 0; i < count; i++)
+            t->decoders[i].gzip = encodings[count - i - 1];
     }
     return -1;
 }
@@ -130,9 +132,16 @@ static size_t on_headers(char *data, size_t size, size_t count, void *context) {
         t->error = 6;
         return 0;
     }
-    char *new_headers = realloc(t->headers, t->header_size + n + 1);
-    if (!new_headers) { t->error = 3; return 0; }
-    t->headers = new_headers;
+    size_t needed = t->header_size + n + 1;
+    if (needed > t->header_capacity) {
+        size_t capacity = t->header_capacity ? t->header_capacity : 512;
+        while (capacity < needed) capacity *= 2;
+        if (capacity > 262145) capacity = 262145;
+        char *new_headers = realloc(t->headers, capacity);
+        if (!new_headers) { t->error = 3; return 0; }
+        t->headers = new_headers;
+        t->header_capacity = capacity;
+    }
     memcpy(t->headers + t->header_size, data, n);
     t->header_size += n;
     t->headers[t->header_size] = 0;
@@ -467,6 +476,7 @@ void req_transfer_free(void *handle) {
         if (t->decoders[i].initialized) inflateEnd(&t->decoders[i].stream);
         clear_probe(&t->decoders[i]);
     }
+    free(t->decoders);
     free(t->upload);
     free(t->headers);
     Pool *p = t->pool;

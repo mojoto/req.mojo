@@ -117,7 +117,7 @@ struct Client(Movable):
                 merged_headers.set("Cookie", cookie.value())
                 cookie_from_jar = cookie
         var request = Request(
-            method, String(target), headers=merged_headers, content=body
+            method, _url=target^, _headers=merged_headers^, _content=body^
         )
         request._cookie_from_jar = cookie_from_jar
         return request^
@@ -130,13 +130,27 @@ struct Client(Movable):
         timeout: Optional[Timeout] = None,
         follow_redirects: Optional[Bool] = None,
     ) raises HTTPError -> Response:
+        return self._send_owned(
+            request,
+            stream=stream,
+            timeout=timeout,
+            follow_redirects=follow_redirects,
+        )
+
+    def _send_owned(
+        mut self,
+        var current: Request,
+        *,
+        stream: Bool = False,
+        timeout: Optional[Timeout] = None,
+        follow_redirects: Optional[Bool] = None,
+    ) raises HTTPError -> Response:
         self._ensure_open()
         var effective_timeout = timeout.value() if timeout else self._timeout
         effective_timeout.validate()
         var follow = (
             follow_redirects.value() if follow_redirects else self._follow_redirects
         )
-        var current = request
         var redirects = 0
         while True:
             current.validate()
@@ -159,7 +173,7 @@ struct Client(Movable):
             self.cookies.extract(response.headers, current.url)
             if not follow or not response.is_redirect():
                 if not stream:
-                    _ = response.read()
+                    response._read_content()
                 return response^
             if redirects >= self._max_redirects:
                 raise HTTPError(
@@ -218,7 +232,10 @@ struct Client(Movable):
                     cookie_from_jar = cookie
             response.close()
             current = Request(
-                method, String(target), headers=redirected_headers, content=body
+                method,
+                _url=target^,
+                _headers=redirected_headers^,
+                _content=body^,
             )
             current._cookie_from_jar = cookie_from_jar
             redirects += 1
@@ -247,8 +264,8 @@ struct Client(Movable):
             json=json,
             auth=auth,
         )
-        return self.send(
-            request, timeout=timeout, follow_redirects=follow_redirects
+        return self._send_owned(
+            request^, timeout=timeout, follow_redirects=follow_redirects
         )
 
     def stream(
@@ -275,8 +292,8 @@ struct Client(Movable):
             json=json,
             auth=auth,
         )
-        return self.send(
-            request,
+        return self._send_owned(
+            request^,
             stream=True,
             timeout=timeout,
             follow_redirects=follow_redirects,

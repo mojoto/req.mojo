@@ -45,15 +45,19 @@ struct CurlStream(Movable):
         ca_file: Optional[String],
     ) raises HTTPError:
         self.owns_pool = 0
-        var body = content.value().copy() if content else Bytes()
+        # The native constructor copies the upload before returning.
+        var empty = Bytes()
+        var body = (
+            content.value().unsafe_ptr() if content else empty.unsafe_ptr()
+        )
         var ca = ca_file.value() if ca_file else String()
         self.handle = external_call["req_transfer_new", Int](
             pool,
             method.as_c_string_span().ptr(),
             url.as_c_string_span().ptr(),
             headers.as_c_string_span().ptr(),
-            body.unsafe_ptr(),
-            len(body),
+            body,
+            len(content.value()) if content else 0,
             c_int(Bool(content)),
             _seconds(timeout.connect),
             _seconds(timeout.read),
@@ -92,8 +96,7 @@ struct CurlStream(Movable):
             unsafe_from_address=address
         )
         var bytes = Bytes(capacity=size)
-        for i in range(size):
-            bytes.append(pointer[unsafe_offset=i])
+        bytes.extend(Span(unsafe_ptr=pointer, length=size))
         return decode_utf8(bytes)
 
     def read_chunk(
@@ -102,20 +105,29 @@ struct CurlStream(Movable):
         if not self.handle:
             raise HTTPError(ErrorKind.StreamClosed, "Response stream is closed")
         var size = min(max_bytes, 16384)
-        var buffer = Bytes(capacity=size)
-        for _ in range(size):
-            buffer.append(0)
+        var buffer = Bytes(length=size, fill=0)
+        var count = self._read_into(buffer)
+        if count == 0:
+            return None
+        buffer.resize(count, 0)
+        return buffer^
+
+    def _read_into(mut self, mut buffer: Bytes) raises HTTPError -> Int:
+        if not self.handle:
+            raise HTTPError(ErrorKind.StreamClosed, "Response stream is closed")
+        if not buffer:
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "Read buffer must not be empty"
+            )
         var count = external_call["req_transfer_read", Int](
-            self.handle, buffer.unsafe_ptr(), size
+            self.handle, buffer.unsafe_ptr(), len(buffer)
         )
         if count < 0:
             self.close()
             raise HTTPError(ErrorKind(-count - 1), "HTTP response read failed")
         if count == 0:
             self.close()
-            return None
-        buffer.resize(count, 0)
-        return buffer^
+        return count
 
     def close(mut self):
         external_call["req_transfer_free", NoneType](self.handle)
