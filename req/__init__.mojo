@@ -18,3 +18,5 @@ from ._api import request, stream, get, head, post, put, patch, delete, options
 from ._streams import SyncByteStream, ByteStream
 from ._transports.base import BaseTransport, Transport, MockTransport
 from ._transports.http import HTTPTransport
+
+from ._hooks import EventHooks, RequestHook, ResponseHook

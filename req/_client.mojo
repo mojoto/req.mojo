@@ -13,12 +13,14 @@ from ._body import RequestBody
 from ._multipart import UploadFile, encode_multipart, multipart_boundary
 from ._content import encode_body
 from ._exceptions import HTTPError, ErrorKind
+from ._hooks import EventHooks
 from ._transports.base import Transport
 from ._transports.http import HTTPTransport
 
 
 struct Client(Movable):
     var cookies: CookieJar
+    var event_hooks: EventHooks
     var _base_url: Optional[URL]
     var _headers: Headers
     var _params: QueryParams
@@ -48,8 +50,10 @@ struct Client(Movable):
         http1: Bool = True,
         http2: Bool = False,
         transport: Transport = Transport(),
+        event_hooks: EventHooks = EventHooks(),
     ) raises HTTPError:
         self.cookies = cookies
+        self.event_hooks = event_hooks
         self._base_url = URL(base_url) if base_url else None
         self._headers = headers
         self._params = params
@@ -196,6 +200,13 @@ struct Client(Movable):
         )
         var redirects = 0
         while True:
+            try:
+                for hook in self.event_hooks.request:
+                    hook[](current)
+            except error:
+                error.method = current.method
+                error.url = String(current.url)
+                raise error
             current.validate()
             var response = self._transport.handle_request(
                 current, effective_timeout
@@ -205,6 +216,14 @@ struct Client(Movable):
             response.request = current
             response.url = current.url
             self.cookies.extract(response.headers, current.url)
+            try:
+                for hook in self.event_hooks.response:
+                    hook[](response)
+            except error:
+                response.close()
+                error.method = current.method
+                error.url = String(current.url)
+                raise error
             if not follow or not response.is_redirect():
                 if not stream:
                     response._read_content()

@@ -16,10 +16,29 @@ def mock_response(request: req.Request) raises req.HTTPError -> req.Response:
     )
 
 
+def before_request(mut request: req.Request) raises req.HTTPError:
+    request.headers.set("X-Package-Hook", "yes")
+
+
+def after_response(mut response: req.Response) raises req.HTTPError:
+    response.headers.set("X-Package-Hook", "yes")
+
+
 def main() raises:
     var offline = req.Client(transport=req.MockTransport(mock_response))
     assert_equal(offline.get("http://offline.test").text(), "offline")
     offline.close()
+    var hooked = req.Client(
+        transport=req.MockTransport(mock_response),
+        event_hooks=req.EventHooks(
+            request=[req.RequestHook(before_request)],
+            response=[req.ResponseHook(after_response)],
+        ),
+    )
+    var hooked_response = hooked.get("http://offline.test")
+    assert_equal(hooked_response.request.headers["X-Package-Hook"], "yes")
+    assert_equal(hooked_response.headers["X-Package-Hook"], "yes")
+    hooked.close()
     if getenv("REQ_EXPECT_HTTP2_UNAVAILABLE"):
         try:
             _ = req.Client(http2=True)
