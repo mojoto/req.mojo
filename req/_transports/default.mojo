@@ -8,6 +8,7 @@ from .._config import Timeout, Limits
 from .._body import RequestBody
 from .._utils import decode_utf8
 from ._library import NativePool, Pool
+from .._streams import SyncByteStream
 
 
 def new_pool(
@@ -29,7 +30,7 @@ def _seconds(value: Optional[Float64]) -> Float64:
     return value.value() if value else -1.0
 
 
-struct CurlStream(Movable):
+struct CurlStream(SyncByteStream):
     var handle: Int
     var owns_pool: Pool
     var _pool: Pool
@@ -134,15 +135,31 @@ struct CurlStream(Movable):
         buffer.resize(count, 0)
         return buffer^
 
-    def _read_into(mut self, mut buffer: Bytes) raises HTTPError -> Int:
+    def read_raw_chunk(
+        mut self, max_bytes: Int
+    ) raises HTTPError -> Optional[Bytes]:
+        var buffer = Bytes(length=min(max_bytes, 16384), fill=0)
+        var count = self._read_into(buffer, raw=True)
+        if count == 0:
+            return None
+        buffer.resize(count, 0)
+        return buffer^
+
+    def _read_into(
+        mut self, mut buffer: Bytes, *, raw: Bool = False
+    ) raises HTTPError -> Int:
         if not self.handle:
             raise HTTPError(ErrorKind.StreamClosed, "Response stream is closed")
         if not buffer:
             raise HTTPError(
                 ErrorKind.InvalidRequest, "Read buffer must not be empty"
             )
-        var count = self._pool.value()[].read(
-            self.handle, Int(buffer.unsafe_ptr()), len(buffer)
+        var count = (
+            self._pool.value()[]
+            .read_raw(
+                self.handle, Int(buffer.unsafe_ptr()), len(buffer)
+            ) if raw else self._pool.value()[]
+            .read(self.handle, Int(buffer.unsafe_ptr()), len(buffer))
         )
         if count < 0:
             self.close()

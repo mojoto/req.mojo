@@ -67,10 +67,13 @@ pixi run ./main
 ## 开发
 
 ```bash
+make install-hooks  # 安装提交前格式化 hook（每次克隆后执行一次）
 make test    # 运行测试
 make format  # 格式化代码
 make build   # 构建包
 ```
+
+hook 在每次提交前执行 `make format`。如果格式化修改了文件，请检查并重新暂存后再提交；hook 不会自动暂存文件。
 
 更多命令和文档开发说明见[开发指南](https://mojoto.github.io/req.mojo/zh-Hans/docs/development)。
 

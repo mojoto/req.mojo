@@ -71,10 +71,14 @@ for more examples and package integration.
 ## Development
 
 ```bash
+make install-hooks  # Install the pre-commit formatter (once per clone)
 make test    # Run tests
 make format  # Format code
 make build   # Build the package
 ```
+
+The hook runs `make format` before each commit. If formatting changes files,
+review and stage them, then commit again. It does not stage files automatically.
 
 See the [development guide](https://mojoto.github.io/req.mojo/docs/development)
 for more commands and documentation setup.

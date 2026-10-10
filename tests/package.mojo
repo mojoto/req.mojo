@@ -10,7 +10,42 @@ def surviving_response(url: String) raises -> req.Response:
     return client.stream("GET", url)
 
 
+def mock_response(request: req.Request) raises req.HTTPError -> req.Response:
+    return req.Response(
+        200, request=request, content=req.encode_utf8("offline")
+    )
+
+
+def before_request(mut request: req.Request) raises req.HTTPError:
+    request.headers.set("X-Package-Hook", "yes")
+
+
+def after_response(mut response: req.Response) raises req.HTTPError:
+    response.headers.set("X-Package-Hook", "yes")
+
+
 def main() raises:
+    var offline = req.Client(transport=req.MockTransport(mock_response))
+    assert_equal(offline.get("http://offline.test").text(), "offline")
+    offline.close()
+    var hooked = req.Client(
+        transport=req.MockTransport(mock_response),
+        event_hooks=req.EventHooks(
+            request=[req.RequestHook(before_request)],
+            response=[req.ResponseHook(after_response)],
+        ),
+    )
+    var hooked_response = hooked.get("http://offline.test")
+    assert_equal(hooked_response.request.headers["X-Package-Hook"], "yes")
+    assert_equal(hooked_response.headers["X-Package-Hook"], "yes")
+    assert_equal(len(hooked_response.history), 0)
+    assert_true(not hooked_response.next_request)
+    assert_true(hooked_response.elapsed() >= 0.0)
+    var chunks = String()
+    for chunk in hooked_response.iter_text(2):
+        chunks += chunk
+    assert_equal(chunks, "offline")
+    hooked.close()
     if getenv("REQ_EXPECT_HTTP2_UNAVAILABLE"):
         try:
             _ = req.Client(http2=True)
@@ -31,6 +66,17 @@ def main() raises:
         raise Error("Expected a native library loading error")
 
     var url = getenv("REQ_TEST_URL")
+    var redirected = req.get(
+        url + "/redirect-chain?count=2", follow_redirects=True
+    )
+    assert_equal(len(redirected.history), 2)
+    assert_equal(redirected.history[0].status_code, 302)
+    assert_true(redirected.history[0].elapsed() >= 0.0)
+    var pending = req.get(url + "/redirect-cookie")
+    assert_true(pending.next_request)
+    assert_equal(
+        pending.cookies.get("session", domain="127.0.0.1").value(), "active"
+    )
     var response = req.get(url + "/echo")
     assert_equal(response.status_code, 200)
     assert_equal(response.json()["method"].string_value(), "GET")
@@ -77,4 +123,10 @@ def main() raises:
     var streamed = surviving_response(url + "/chunked")
     _ = streamed.read()
     assert_equal(streamed.text(), "hello world")
+    var raw_response = req.stream("GET", url + "/encoded?kind=gzip")
+    var raw = req.Bytes()
+    for chunk in raw_response.iter_raw(7):
+        raw.extend(Span(chunk))
+    assert_equal(Int(raw[0]), 31)
+    assert_equal(Int(raw[1]), 139)
     print("Req package HTTP/2, JSON, upload, proxy, and streaming tests passed")

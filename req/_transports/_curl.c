@@ -230,6 +230,7 @@ struct Transfer {
     curl_off_t downloaded, uploaded;
     Decoder *decoders;
     int decoder_count;
+    int decoders_ready;
 };
 
 static double now_seconds(void) {
@@ -350,8 +351,7 @@ static size_t on_headers(char *data, size_t size, size_t count, void *context) {
                 return 0;
             }
             t->header_ready = 1;
-            t->error = configure_decoders(t);
-            if (t->error >= 0) return 0;
+
         }
     }
     t->last_read = now_seconds();
@@ -864,9 +864,21 @@ static int64_t read_decoded(Transfer *t, int index, unsigned char *buffer, size_
 int64_t req_transfer_read(void *handle, unsigned char *buffer, size_t capacity) {
     Transfer *t = handle;
     if (t->pool->closed) return -17;
+    if (!t->decoders_ready) {
+        t->decoders_ready = 1;
+        int error = configure_decoders(t);
+        if (error >= 0) {
+            finish(t, error);
+            return -(int64_t)(error + 1);
+        }
+    }
     int64_t result = read_decoded(t, t->decoder_count - 1, buffer, capacity);
     if (result < 0) finish(t, (int)(-result - 1));
     return result;
+}
+
+int64_t req_transfer_read_raw(void *handle, unsigned char *buffer, size_t capacity) {
+    return read_wire(handle, buffer, capacity);
 }
 
 void req_transfer_free(void *handle) {

@@ -96,8 +96,6 @@ def stream(
         data=data,
         json=json,
     )
-    response._stream.value().owns_pool = client._pool
-    client._pool = None
     return response^
 
 

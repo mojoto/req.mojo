@@ -64,6 +64,7 @@ struct NativePool(Movable):
     var header_data: def(Int) thin abi("C") -> Int
     var header_size: def(Int) thin abi("C") -> Int
     var read: def(Int, Int, Int) thin abi("C") -> Int
+    var read_raw: def(Int, Int, Int) thin abi("C") -> Int
     var free: def(Int) thin abi("C") -> NoneType
 
     def __init__(
@@ -112,6 +113,9 @@ struct NativePool(Movable):
         )
         self.read = _symbol[type_of(self.read)](
             self.library, "req_transfer_read"
+        )
+        self.read_raw = _symbol[type_of(self.read_raw)](
+            self.library, "req_transfer_read_raw"
         )
         self.free = _symbol[type_of(self.free)](
             self.library, "req_transfer_free"

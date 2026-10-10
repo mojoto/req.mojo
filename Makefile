@@ -7,11 +7,21 @@ NATIVE_FLAGS := $(if $(filter Darwin,$(shell uname -s)),-dynamiclib,-shared)
 
 DOCS_DIR := website
 
-.PHONY: install native test-deps test test-package build format clean doc-install doc-start doc-build doc-serve doc-clean
+.PHONY: install install-hooks native test-deps test test-package build format clean doc-install doc-start doc-build doc-serve doc-clean
 
 install:
 	pixi install
 	$(MOJO) --version
+
+install-hooks:
+	@hooks_dir="$$(git rev-parse --git-common-dir)/hooks"; \
+	mkdir -p "$$hooks_dir"; \
+	if [ -e "$$hooks_dir/pre-commit" ] || [ -L "$$hooks_dir/pre-commit" ]; then \
+		test "$$(readlink "$$hooks_dir/pre-commit")" = "$(CURDIR)/.githooks/pre-commit" || \
+		{ echo "An existing pre-commit hook is installed; integrate .githooks/pre-commit manually." >&2; exit 1; }; \
+	else \
+		ln -s "$(CURDIR)/.githooks/pre-commit" "$$hooks_dir/pre-commit"; \
+	fi
 
 native: build/libreq_curl.$(NATIVE_EXT)
 
