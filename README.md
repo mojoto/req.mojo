@@ -1,9 +1,47 @@
 # Req.mojo
 
-A native synchronous HTTP client for Mojo.
+A native synchronous HTTP client for Mojo. Req provides an HTTP/1.1 API for
+sending requests, managing connections and cookies, working with JSON, and
+streaming downloads.
 
-[Documentation](https://mojoto.github.io/req.mojo/) ·
-[简体中文](https://mojoto.github.io/req.mojo/zh-Hans/)
+<p align="center">
+  <a href="https://github.com/mojoto/req.mojo/actions/workflows/test.yml">
+    <img src="https://github.com/mojoto/req.mojo/actions/workflows/test.yml/badge.svg" alt="Test" />
+  </a>
+  <a href="https://github.com/mojoto/req.mojo/actions/workflows/pages.yml">
+    <img src="https://github.com/mojoto/req.mojo/actions/workflows/pages.yml/badge.svg" alt="Documentation" />
+  </a>
+  <a href="https://github.com/mojoto/req.mojo/releases">
+    <img alt="GitHub release" src="https://img.shields.io/github/v/release/mojoto/req.mojo">
+  </a>
+</p>
+
+Language: English | [中文](README.zh-CN.md)
+
+> Documentation: https://mojoto.github.io/req.mojo/
+
+## Installation
+
+Req builds from source with Mojo 1.1.0, [Pixi](https://pixi.sh), a C compiler,
+libcurl 7.85+ with TLS and gzip support. On macOS, install the Command Line
+Tools. On Debian/Ubuntu, install
+`build-essential libcurl4-openssl-dev openssl`.
+
+```bash
+git clone https://github.com/mojoto/req.mojo.git
+cd req.mojo
+pixi install
+make build
+```
+
+The build creates `build/req.mojoc` and the native transport bridge
+`build/libreq_curl.a`. The Pixi environment pins the Mojo compiler and native
+JSON dependency. Precompiled packages require a compatible compiler; use the
+project's pinned version.
+
+## Usage
+
+Save the following example as `main.mojo` in the repository root:
 
 ```mojo
 import req
@@ -17,65 +55,60 @@ def main() raises:
     print(response.text())
 ```
 
-## Features
+Run it with the native transport bridge and libcurl linked:
 
-- Synchronous HTTP/1.1 and HTTPS with certificate verification.
-- Persistent clients with connection reuse and scoped cookies.
-- Query parameters, repeated headers, forms, and native JSON.
-- Basic and Bearer authentication.
-- Separate connect, read, and write timeouts.
-- Optional redirects with credentials removed across origins.
-- Streaming downloads and incremental gzip/deflate decoding.
-- Typed errors and explicit resource ownership.
-
-Requests default to verified TLS, five-second phase timeouts, and no automatic
-redirects or retries. HTTP 4xx/5xx responses return normally; call
-`raise_for_status()` to raise an error.
-
-This version supports synchronous HTTP/1.1. Async, HTTP/2, multipart, proxies,
-and automatic retries are outside its scope. Clients are intended for
-single-threaded use. Cookie handling has no public-suffix database and supports
-IMF-fixdate Expires values. CI validates Linux x86-64, Linux ARM64, and macOS ARM64.
-
-## Installation
-
-Requires Mojo 1.1.0, [Pixi](https://pixi.sh), a C compiler, and libcurl 7.85+ with
-TLS and gzip support. On macOS, install the Command Line Tools. On Debian/Ubuntu,
-install `build-essential libcurl4-openssl-dev openssl`.
-
-```sh
-pixi install
-make build
+```bash
+pixi run mojo run -I . \
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl main.mojo
 ```
 
-## Testing
+Req supports HTTP and verified HTTPS, query parameters, repeated headers,
+forms, native JSON, and Basic or Bearer authentication. Persistent clients
+reuse connections and manage scoped cookies. Streaming responses support
+incremental gzip/deflate decoding, with typed errors and explicit resource
+ownership.
 
-```sh
-make test
-make test TEST_ARGS="--only test_client_requests_and_reuse"
-make format
-make clean
-```
+Requests verify TLS by default, use separate five-second connect, read, and
+write timeouts, and do not automatically redirect or retry. Enable redirects
+when needed; credentials are removed across origins. HTTP 4xx/5xx responses
+return normally, so call `raise_for_status()` to raise an error.
 
-Tests use local HTTP/TLS fixtures. The runner automatically collects test
-modules, lets Mojo's `TestSuite` discover their `test_` functions, and builds one
-`.req-test-suite` executable in the project root. It removes temporary files
-after the run.
+This version supports synchronous HTTP/1.1 and single-threaded clients. Async,
+HTTP/2, multipart, proxies, and automatic retries are outside its scope.
+Cookie handling has no public-suffix database and supports IMF-fixdate Expires
+values.
 
-## Documentation website
+## Development
 
-The documentation uses Docusaurus 3 and React, with English and Simplified
-Chinese content, matching [morrow.mojo](https://github.com/mojoto/morrow.mojo).
-Requires Node.js 22 or newer.
+Source builds use Mojo 1.1.0. Run `make install` to install the pinned Pixi
+environment, then run `make test build`. CI tests and precompiles the package
+on Linux x86-64, Linux ARM64, and macOS ARM64.
 
-```sh
-make doc-install
-make doc-start
-make doc-build
-make doc-serve
-```
+| Target | Description |
+| --- | --- |
+| `make install` | Install the Pixi environment and show the Mojo version |
+| `make native` | Build the native transport bridge |
+| `make test` | Run the full test suite with local HTTP/TLS fixtures |
+| `make test TEST_ARGS="--only test_client_requests_and_reuse"` | Run a selected test |
+| `make format` | Format the `req` and `tests` directories |
+| `make build` | Build the native bridge and precompile `req` as `build/req.mojoc` |
+| `make clean` | Remove build output, temporary test files, and Python caches |
+| `make doc-install` | Install Docusaurus dependencies |
+| `make doc-start` | Start the documentation development server |
+| `make doc-build` | Build the English and Chinese documentation |
+| `make doc-serve` | Preview the built documentation site |
+| `make doc-clean` | Remove generated Docusaurus files |
 
-`make doc-clean` removes generated site files. Pull requests validate both
-languages; changes on `main` deploy automatically to GitHub Pages.
+The test runner collects test modules, lets Mojo's `TestSuite` discover their
+`test_` functions, and builds one `.req-test-suite` executable in the project
+root. It removes temporary files after the run.
 
-req.mojo is [MIT licensed](LICENSE).
+The documentation targets require Node.js 22+ and npm. Run `make doc-install`
+before building the documentation, then use `make doc-build` followed by
+`make doc-serve` to preview the built site.
+
+See the [getting started guide](https://mojoto.github.io/req.mojo/docs/getting-started)
+and [development guide](https://mojoto.github.io/req.mojo/docs/development) for
+package integration and documentation build commands.
+
+Req is [MIT licensed](LICENSE).
