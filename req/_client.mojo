@@ -8,7 +8,11 @@ from ._types import Bytes
 from ._json import JSONValue
 from ._auth import Auth
 from ._cookies import CookieJar
-from ._config import Timeout
+from ._config import Timeout, Limits
+from ._body import RequestBody
+from ._multipart import UploadFile, encode_multipart, multipart_boundary
+from ._proxy import environment_proxy, environment_no_proxy
+from std.os import getenv
 from ._content import encode_body
 from ._exceptions import HTTPError, ErrorKind
 from ._transports.default import (
@@ -32,6 +36,9 @@ struct Client(Movable):
     var _verify: Bool
     var _ca_file: Optional[String]
     var _pool: Pool
+    var _proxy: Optional[String]
+    var _trust_env: Bool
+    var _ca_path: String
 
     def __init__(
         out self,
@@ -46,6 +53,9 @@ struct Client(Movable):
         max_redirects: Int = 20,
         verify: Bool = True,
         ca_file: Optional[String] = None,
+        proxy: Optional[String] = None,
+        trust_env: Bool = False,
+        limits: Limits = Limits(),
     ) raises HTTPError:
         self._pool = None
         self.cookies = cookies
@@ -58,18 +68,40 @@ struct Client(Movable):
         self._max_redirects = max_redirects
         self._verify = verify
         self._ca_file = ca_file
+        self._proxy = proxy
+        self._trust_env = trust_env
+        self._ca_path = String()
+        if trust_env and not ca_file:
+            var file = getenv("SSL_CERT_FILE")
+            if file:
+                self._ca_file = file
+            self._ca_path = getenv("SSL_CERT_DIR")
         timeout.validate()
         if max_redirects < 0 or (not verify and ca_file):
             raise HTTPError(
                 ErrorKind.InvalidRequest,
                 "Invalid redirect limit or TLS configuration",
             )
-        self._pool = new_pool()
+        self._pool = new_pool(limits)
+        if proxy:
+            self._validate_proxy(proxy.value())
 
     def __deinit__(deinit self):
         # Mojo may destroy an owner after its last use. Active responses retain
         # the pool; explicit close() and context exit cancel those responses.
         release_pool(self._pool)
+
+    def _validate_proxy(self, var proxy: String) raises HTTPError:
+        for byte in proxy.as_bytes():
+            if byte <= 32 or byte == 127:
+                raise HTTPError(ErrorKind.InvalidRequest, "Invalid proxy URL")
+        if (
+            self._pool.value()[].proxy_validate(
+                Int(proxy.as_c_string_span().ptr())
+            )
+            >= 0
+        ):
+            raise HTTPError(ErrorKind.InvalidRequest, "Invalid proxy URL")
 
     def close(mut self):
         close_pool(self._pool)
@@ -90,6 +122,8 @@ struct Client(Movable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -105,9 +139,35 @@ struct Client(Movable):
             target = target.with_query(merged)
         var merged_headers = self._headers
         merged_headers.merge(headers)
-        var body = encode_body(
-            merged_headers, content=content, data=data, json=json
-        )
+        var raw_body: Optional[Bytes] = None
+        var upload = body
+        if files:
+            if content or json or body:
+                raise HTTPError(
+                    ErrorKind.InvalidRequest,
+                    "files cannot be combined with content, json or body",
+                )
+            var encoded = encode_multipart(
+                data.value() if data else QueryParams(),
+                files,
+                multipart_boundary(merged_headers.get("Content-Type")),
+            )
+            upload = encoded[0]
+            if "Content-Type" not in merged_headers:
+                merged_headers.set(
+                    "Content-Type",
+                    "multipart/form-data; boundary=" + encoded[1],
+                )
+        elif body:
+            if content or data or json:
+                raise HTTPError(
+                    ErrorKind.InvalidRequest,
+                    "body cannot be combined with content, data or json",
+                )
+        else:
+            raw_body = encode_body(
+                merged_headers, content=content, data=data, json=json
+            )
         var cookie_from_jar: Optional[String] = None
         if auth:
             auth.value().apply(merged_headers)
@@ -122,7 +182,11 @@ struct Client(Movable):
                 merged_headers.set("Cookie", cookie.value())
                 cookie_from_jar = cookie
         var request = Request(
-            method, _url=target^, _headers=merged_headers^, _content=body^
+            method,
+            _url=target^,
+            _headers=merged_headers^,
+            _content=raw_body^,
+            _body=upload,
         )
         request._cookie_from_jar = cookie_from_jar
         return request^
@@ -164,6 +228,17 @@ struct Client(Movable):
                 headers += (
                     pair[0] + (";" if not pair[1] else ": " + pair[1]) + "\n"
                 )
+            var proxy = self._proxy.value() if self._proxy else (
+                environment_proxy(
+                    current.url.scheme()
+                ) if self._trust_env else String()
+            )
+            if proxy:
+                self._validate_proxy(proxy)
+            var no_proxy = (
+                environment_no_proxy() if self._trust_env
+                and not self._proxy else String()
+            )
             var source = CurlStream(
                 self._pool,
                 current.method,
@@ -173,6 +248,10 @@ struct Client(Movable):
                 effective_timeout,
                 self._verify,
                 self._ca_file,
+                body=current.body,
+                proxy=proxy,
+                no_proxy=no_proxy,
+                ca_path=self._ca_path,
             )
             var response = Response.from_stream(source^, current)
             self.cookies.extract(response.headers, current.url)
@@ -198,6 +277,7 @@ struct Client(Movable):
             var method = current.method
             var redirected_headers = current.headers
             var body: Optional[Bytes] = None
+            var upload = current.body
             if current.content:
                 body = current.content.value().copy()
             if (response.status_code == 303 and method != "HEAD") or (
@@ -205,6 +285,7 @@ struct Client(Movable):
             ):
                 method = "GET"
                 body = None
+                upload = None
                 for name in [
                     "Content-Length",
                     "Content-Type",
@@ -241,6 +322,7 @@ struct Client(Movable):
                 _url=target^,
                 _headers=redirected_headers^,
                 _content=body^,
+                _body=upload,
             )
             current._cookie_from_jar = cookie_from_jar
             redirects += 1
@@ -253,6 +335,8 @@ struct Client(Movable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -265,6 +349,8 @@ struct Client(Movable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -281,6 +367,8 @@ struct Client(Movable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -293,6 +381,8 @@ struct Client(Movable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -351,6 +441,8 @@ struct Client(Movable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -363,6 +455,8 @@ struct Client(Movable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -377,6 +471,8 @@ struct Client(Movable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -389,6 +485,8 @@ struct Client(Movable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -403,6 +501,8 @@ struct Client(Movable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -415,6 +515,8 @@ struct Client(Movable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -429,6 +531,8 @@ struct Client(Movable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -441,6 +545,8 @@ struct Client(Movable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -455,6 +561,8 @@ struct Client(Movable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -467,6 +575,8 @@ struct Client(Movable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -515,6 +625,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -527,6 +639,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -542,6 +656,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -554,6 +670,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -606,6 +724,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -617,6 +737,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -631,6 +753,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -642,6 +766,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -656,6 +782,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -667,6 +795,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -681,6 +811,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -692,6 +824,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -706,6 +840,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -717,6 +853,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,
@@ -732,6 +870,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
         params: QueryParams = QueryParams(),
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
+        files: List[UploadFile] = List[UploadFile](),
         data: Optional[QueryParams] = None,
         json: Optional[JSONValue] = None,
         auth: Optional[Auth] = None,
@@ -742,6 +882,8 @@ struct ClientContext[origin: Origin[mut=True]](ImplicitlyCopyable):
             params=params,
             headers=headers,
             content=content,
+            body=body,
+            files=files,
             data=data,
             json=json,
             auth=auth,

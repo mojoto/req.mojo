@@ -2,6 +2,10 @@
 #include <curl/curl.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -19,12 +23,180 @@ typedef struct {
     int probing;
 } Decoder;
 
+typedef struct UploadPart UploadPart;
+struct UploadPart {
+    UploadPart *next;
+    unsigned char *bytes;
+    size_t size;
+    int fd;
+};
+typedef struct BodyUse BodyUse;
+struct BodyUse { size_t refs; int used; };
+typedef struct BodyDependency BodyDependency;
+struct BodyDependency { BodyDependency *next; BodyUse *use; };
+typedef struct {
+    UploadPart *head, *tail;
+    BodyUse *use;
+    BodyDependency *dependencies;
+    size_t size;
+    int known_length, replayable;
+} UploadBody;
+
+void *req_body_new(int known_length, int replayable) {
+    UploadBody *body = calloc(1, sizeof(*body));
+    if (body) {
+        body->known_length = known_length; body->replayable = replayable;
+        if (!replayable) {
+            body->use = calloc(1, sizeof(*body->use));
+            if (!body->use) { free(body); return NULL; }
+            body->use->refs = 1;
+        }
+    }
+    return body;
+}
+
+static void release_body_use(BodyUse *use) { if (use && !--use->refs) free(use); }
+
+void req_body_free(void *handle) {
+    UploadBody *body = handle;
+    if (!body) return;
+    UploadPart *part = body->head;
+    while (part) {
+        UploadPart *next = part->next;
+        if (part->fd >= 0) close(part->fd);
+        free(part->bytes);
+        free(part);
+        part = next;
+    }
+    release_body_use(body->use);
+    BodyDependency *dependency = body->dependencies;
+    while (dependency) {
+        BodyDependency *next = dependency->next;
+        release_body_use(dependency->use);
+        free(dependency);
+        dependency = next;
+    }
+    free(body);
+}
+
+static int append_part(UploadBody *body, UploadPart *part) {
+    if (part->size > (size_t)INT64_MAX - body->size) {
+        if (part->fd >= 0) close(part->fd);
+        free(part->bytes); free(part); return 1;
+    }
+    if (body->tail) body->tail->next = part;
+    else body->head = part;
+    body->tail = part;
+    body->size += part->size;
+    return -1;
+}
+
+int req_body_bytes(void *handle, const unsigned char *bytes, size_t size) {
+    UploadPart *part = calloc(1, sizeof(*part));
+    if (!part) return 4;
+    part->fd = -1;
+    part->bytes = malloc(size ? size : 1);
+    if (!part->bytes) { free(part); return 4; }
+    if (size) memcpy(part->bytes, bytes, size);
+    part->size = size;
+    return append_part(handle, part);
+}
+
+int req_body_file(void *handle, const char *path) {
+    int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) return 4;
+    struct stat info;
+    if (fstat(fd, &info) || !S_ISREG(info.st_mode) || info.st_size < 0) {
+        close(fd); return 1;
+    }
+    UploadPart *part = calloc(1, sizeof(*part));
+    if (!part) { close(fd); return 4; }
+    part->fd = fd;
+    part->size = (size_t)info.st_size;
+    return append_part(handle, part);
+}
+
+static int add_dependency(UploadBody *body, BodyUse *use) {
+    if (!use) return -1;
+    BodyDependency *dependency = malloc(sizeof(*dependency));
+    if (!dependency) return 4;
+    dependency->use = use;
+    use->refs++;
+    dependency->next = body->dependencies;
+    body->dependencies = dependency;
+    return -1;
+}
+
+static int body_consumed(UploadBody *body) {
+    if (body->use && body->use->used) return 1;
+    for (BodyDependency *item = body->dependencies; item; item = item->next)
+        if (item->use->used) return 1;
+    return 0;
+}
+
+static void consume_body(UploadBody *body) {
+    if (body->use) body->use->used = 1;
+    for (BodyDependency *item = body->dependencies; item; item = item->next)
+        item->use->used = 1;
+}
+
+int req_body_append(void *handle, void *source) {
+    UploadBody *body = handle, *other = source;
+    if (body_consumed(other)) return 18;
+    int error = add_dependency(body, other->use);
+    if (error >= 0) return error;
+    for (BodyDependency *item = other->dependencies; item; item = item->next) {
+        error = add_dependency(body, item->use);
+        if (error >= 0) return error;
+    }
+    for (UploadPart *part = other->head; part; part = part->next) {
+        if (part->fd < 0) {
+            int error = req_body_bytes(body, part->bytes, part->size);
+            if (error >= 0) return error;
+        } else {
+            UploadPart *copy = calloc(1, sizeof(*copy));
+            if (!copy) return 4;
+            copy->fd = dup(part->fd);
+            if (copy->fd < 0) { free(copy); return 4; }
+            copy->size = part->size;
+            int error = append_part(body, copy);
+            if (error >= 0) return error;
+        }
+    }
+    body->known_length &= other->known_length;
+    body->replayable &= other->replayable;
+    return -1;
+}
+
+int64_t req_body_length(void *handle) {
+    UploadBody *body = handle;
+    return body->known_length ? (int64_t)body->size : -1;
+}
+
+int req_proxy_validate(const char *proxy) {
+    CURLU *url = curl_url();
+    if (!url) return 2;
+    char *scheme = NULL, *path = NULL, *value = NULL;
+    int valid = curl_url_set(url, CURLUPART_URL, proxy, 0) == CURLUE_OK &&
+        curl_url_get(url, CURLUPART_SCHEME, &scheme, 0) == CURLUE_OK &&
+        (!strcmp(scheme, "http") || !strcmp(scheme, "https"));
+    if (curl_url_get(url, CURLUPART_PATH, &path, 0) == CURLUE_OK)
+        valid &= !strcmp(path, "/");
+    if (curl_url_get(url, CURLUPART_QUERY, &value, 0) == CURLUE_OK) valid = 0;
+    curl_free(value); value = NULL;
+    if (curl_url_get(url, CURLUPART_FRAGMENT, &value, 0) == CURLUE_OK) valid = 0;
+    curl_free(value); curl_free(path); curl_free(scheme); curl_url_cleanup(url);
+    return valid ? -1 : 1;
+}
+
 typedef struct Transfer Transfer;
 typedef struct {
     CURLM *multi;
     Transfer *head;
     size_t refs;
     int closed;
+    size_t max_connections, max_keepalive;
+    double keepalive_expiry, last_activity;
 } Pool;
 
 struct Transfer {
@@ -34,6 +206,11 @@ struct Transfer {
     struct curl_slist *request_headers;
     unsigned char *upload;
     size_t upload_size;
+    UploadBody *upload_body;
+    UploadPart *upload_part;
+    size_t upload_offset;
+    int body_started, admitted;
+    double pool_timeout;
     char *headers;
     size_t header_size, header_capacity;
     unsigned char body[CURL_MAX_WRITE_SIZE];
@@ -63,6 +240,7 @@ static void finish(Transfer *t, int error) {
     if (t->done) return;
     t->error = error;
     t->done = 1;
+    t->pool->last_activity = now_seconds();
     if (t->easy) {
         if (error >= 0) curl_easy_setopt(t->easy, CURLOPT_FORBID_REUSE, 1L);
         curl_multi_remove_handle(t->pool->multi, t->easy);
@@ -109,11 +287,11 @@ static int configure_decoders(Transfer *t) {
 static int map_error(CURLcode code, Transfer *t) {
     switch (code) {
     case CURLE_OK: return -1;
-    case CURLE_COULDNT_RESOLVE_HOST: case CURLE_COULDNT_CONNECT: return 2;
+    case CURLE_COULDNT_RESOLVE_PROXY: case CURLE_COULDNT_RESOLVE_HOST: case CURLE_COULDNT_CONNECT: return 2;
     case CURLE_SSL_CONNECT_ERROR: case CURLE_PEER_FAILED_VERIFICATION:
     case CURLE_SSL_CACERT_BADFILE: return 5;
     case CURLE_OPERATION_TIMEDOUT: return t->connected ? 8 : 7;
-    case CURLE_SEND_ERROR: return 4;
+    case CURLE_SEND_ERROR: case CURLE_READ_ERROR: case CURLE_UPLOAD_FAILED: return 4;
     case CURLE_BAD_CONTENT_ENCODING: return 13;
     case CURLE_RECV_ERROR: case CURLE_PARTIAL_FILE: return 3;
     default: return 6;
@@ -173,6 +351,70 @@ static size_t on_body(char *data, size_t size, size_t count, void *context) {
     return n;
 }
 
+static size_t on_upload(char *buffer, size_t size, size_t count, void *context) {
+    Transfer *t = context;
+    if (!t->body_started) {
+        if (body_consumed(t->upload_body)) { t->error = 18; return CURL_READFUNC_ABORT; }
+        consume_body(t->upload_body);
+        t->body_started = 1;
+    }
+    size_t capacity = size * count, filled = 0;
+    while (t->upload_part && filled < capacity) {
+        UploadPart *part = t->upload_part;
+        size_t available = part->size - t->upload_offset;
+        size_t n = capacity - filled < available ? capacity - filled : available;
+        if (part->fd >= 0) {
+            struct stat info;
+            if (fstat(part->fd, &info) || info.st_size != (off_t)part->size) {
+                t->error = 4; return CURL_READFUNC_ABORT;
+            }
+            ssize_t got = pread(part->fd, buffer + filled, n, (off_t)t->upload_offset);
+            if (got < 0 || (n && !got)) { t->error = 4; return CURL_READFUNC_ABORT; }
+            n = (size_t)got;
+        } else if (n) memcpy(buffer + filled, part->bytes + t->upload_offset, n);
+        filled += n;
+        t->upload_offset += n;
+        if (t->upload_offset == part->size) {
+            t->upload_part = part->next;
+            t->upload_offset = 0;
+        }
+    }
+    return filled;
+}
+
+static size_t active_transfers(Pool *p) {
+    size_t count = 0;
+    for (Transfer *t = p->head; t; t = t->next)
+        if (!t->done && t->admitted) count++;
+    return count;
+}
+
+static void admit_transfers(Pool *p) {
+    size_t active = active_transfers(p);
+    for (Transfer *t = p->head; t; t = t->next) {
+        if (t->done || t->admitted) continue;
+        if (p->max_connections && active >= p->max_connections) {
+            if (t->pool_timeout > 0 && now_seconds() - t->started >= t->pool_timeout)
+                finish(t, 19);
+            continue;
+        }
+        if (!active && p->last_activity && p->keepalive_expiry >= 0 &&
+            now_seconds() - p->last_activity >= p->keepalive_expiry) {
+            curl_multi_cleanup(p->multi);
+            p->multi = curl_multi_init();
+            if (!p->multi) { finish(t, 2); return; }
+        }
+        if (curl_multi_setopt(p->multi, CURLMOPT_MAXCONNECTS,
+                (long)(p->max_keepalive ? p->max_keepalive : 1)) != CURLM_OK ||
+            curl_multi_add_handle(p->multi, t->easy) != CURLM_OK) {
+            finish(t, 6); continue;
+        }
+        t->admitted = 1;
+        t->started = t->last_read = t->last_write = now_seconds();
+        active++;
+    }
+}
+
 static int on_progress(void *context, curl_off_t dt, curl_off_t dn, curl_off_t ut, curl_off_t un) {
     Transfer *t = context;
     (void)dt; (void)ut;
@@ -183,6 +425,8 @@ static int on_progress(void *context, curl_off_t dt, curl_off_t dn, curl_off_t u
 }
 
 static void pump(Pool *p) {
+    admit_transfers(p);
+    if (!p->multi) return;
     int running;
     CURLMcode result = curl_multi_perform(p->multi, &running);
     if (result != CURLM_OK) {
@@ -201,7 +445,7 @@ static void pump(Pool *p) {
     }
     double now = now_seconds();
     for (Transfer *t = p->head; t; t = t->next) {
-        if (t->done || t->paused || (t->header_ready && !t->receiving)) continue;
+        if (t->done || !t->admitted || t->paused || (t->header_ready && !t->receiving)) continue;
         double pretransfer = 0;
         curl_easy_getinfo(t->easy, CURLINFO_PRETRANSFER_TIME, &pretransfer);
         if (!t->connected && pretransfer > 0) {
@@ -218,7 +462,7 @@ static void pump(Pool *p) {
     }
 }
 
-void *req_pool_new(void) {
+void *req_pool_new(size_t max_connections, size_t max_keepalive, double keepalive_expiry) {
     static int initialized;
     if (!initialized) {
         if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) return NULL;
@@ -230,6 +474,9 @@ void *req_pool_new(void) {
     p->multi = curl_multi_init();
     if (!p->multi) { free(p); return NULL; }
     p->refs = 1;
+    p->max_connections = max_connections;
+    p->max_keepalive = max_connections && max_keepalive > max_connections ? max_connections : max_keepalive;
+    p->keepalive_expiry = keepalive_expiry;
     return p;
 }
 
@@ -245,7 +492,9 @@ void req_pool_release(void *handle) { if (handle) release_pool(handle); }
 void *req_transfer_new(void *handle, const char *method, const char *url,
                        const char *headers, const unsigned char *body, size_t length,
                        int has_body, double connect_timeout, double read_timeout,
-                       double write_timeout, int verify, const char *ca_file) {
+                       double write_timeout, int verify, const char *ca_file,
+                       UploadBody *upload_body, double pool_timeout,
+                       const char *proxy, const char *no_proxy, const char *ca_path) {
     Pool *p = handle;
     if (!p || p->closed) return NULL;
     Transfer *t = calloc(1, sizeof(*t));
@@ -259,7 +508,10 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     t->connect_timeout = connect_timeout;
     t->read_timeout = read_timeout;
     t->write_timeout = write_timeout;
-    t->upload_size = length;
+    t->upload_size = upload_body ? upload_body->size : length;
+    t->pool_timeout = pool_timeout;
+    t->upload_body = upload_body;
+    t->upload_part = upload_body ? upload_body->head : NULL;
     t->easy = curl_easy_init();
     if (!t->easy) { finish(t, 2); return t; }
 #define SET(option, value) do { if (curl_easy_setopt(t->easy, option, value) != CURLE_OK) { finish(t, 6); return t; } } while (0)
@@ -270,11 +522,21 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     SET(CURLOPT_FOLLOWLOCATION, 0L);
     SET(CURLOPT_PATH_AS_IS, 1L);
     SET(CURLOPT_NOSIGNAL, 1L);
-    SET(CURLOPT_PROXY, "");
+    SET(CURLOPT_PROXY, proxy);
+    SET(CURLOPT_NOPROXY, no_proxy);
+    SET(CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
+    if (!p->max_keepalive || p->keepalive_expiry == 0) SET(CURLOPT_FORBID_REUSE, 1L);
+    long max_age = LONG_MAX;
+    if (p->keepalive_expiry >= 0 && p->keepalive_expiry < (double)LONG_MAX)
+        max_age = (long)(p->keepalive_expiry < 1 ? 1 : p->keepalive_expiry);
+    SET(CURLOPT_MAXAGE_CONN, max_age);
     SET(CURLOPT_NETRC, CURL_NETRC_IGNORED);
     SET(CURLOPT_SSL_VERIFYPEER, verify ? 1L : 0L);
     SET(CURLOPT_SSL_VERIFYHOST, verify ? 2L : 0L);
-    if (ca_file && *ca_file) SET(CURLOPT_CAINFO, ca_file);
+    SET(CURLOPT_PROXY_SSL_VERIFYPEER, verify ? 1L : 0L);
+    SET(CURLOPT_PROXY_SSL_VERIFYHOST, verify ? 2L : 0L);
+    if (ca_file && *ca_file) { SET(CURLOPT_CAINFO, ca_file); SET(CURLOPT_PROXY_CAINFO, ca_file); }
+    if (ca_path && *ca_path) { SET(CURLOPT_CAPATH, ca_path); SET(CURLOPT_PROXY_CAPATH, ca_path); }
     SET(CURLOPT_ACCEPT_ENCODING, "gzip, deflate");
     SET(CURLOPT_HTTP_CONTENT_DECODING, 0L);
     long connect_ms = LONG_MAX;
@@ -302,7 +564,14 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     if (!next) { finish(t, 4); return t; }
     t->request_headers = next;
     SET(CURLOPT_HTTPHEADER, t->request_headers);
-    if (has_body) {
+    if (upload_body) {
+        if (body_consumed(upload_body)) { finish(t, 18); return t; }
+        SET(CURLOPT_UPLOAD, 1L);
+        SET(CURLOPT_READFUNCTION, on_upload);
+        SET(CURLOPT_READDATA, t);
+        SET(CURLOPT_INFILESIZE_LARGE, (curl_off_t)req_body_length(upload_body));
+        SET(CURLOPT_CUSTOMREQUEST, method);
+    } else if (has_body) {
         t->upload = malloc(length ? length : 1);
         if (!t->upload) { finish(t, 4); return t; }
         if (length) memcpy(t->upload, body, length);
@@ -312,7 +581,6 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     }
     if (!strcmp(method, "HEAD")) SET(CURLOPT_NOBODY, 1L);
 #undef SET
-    if (curl_multi_add_handle(p->multi, t->easy) != CURLM_OK) finish(t, 6);
     return t;
 }
 

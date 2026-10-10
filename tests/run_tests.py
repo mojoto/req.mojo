@@ -1,4 +1,4 @@
-"""Run independently collected compatibility cases and native regressions."""
+"""Discover and run native Mojo tests, including adapted HTTPX scenarios."""
 
 import json
 import os
@@ -9,52 +9,37 @@ import sys
 from pathlib import Path
 
 from conftest import Fixtures
-from compat.check_baseline import validate_baseline
 
 
-def collected_tests(cases, definitions):
-    """Collect each compatibility identity once, then remaining regressions."""
-    tests = [dict(case["execution"], source=case["source"]) for case in cases]
-    covered = {call["target"] for test in tests for call in test["calls"]}
-    # Every canonical row now runs independently with the same assertions.
-    covered |= {
-        "tests/compat/test_whatwg.mojo::test_canonical_absolute_urls",
-        "tests/compat/test_whatwg.mojo::test_rejected_canonical_urls",
-    }
-    names = {test["name"] for test in tests}
-    for target in sorted(definitions - covered):
-        path, function = target.split("::")
-        name = function
-        if name in names:
-            name += "__" + Path(path).stem
-        if name in names:
-            raise ValueError(f"Duplicate regression name: {name}")
-        names.add(name)
-        tests.append({"name": name, "calls": [{"target": target, "args": []}]})
+def collected_tests():
+    """Collect test functions directly from source, without a case inventory."""
+    tests = []
+    names = set()
+    for path in sorted(Path("tests").rglob("test_*.mojo")):
+        for function in re.findall(r"^def (test_\w+)\(\) raises:", path.read_text(), re.MULTILINE):
+            name = function
+            if name in names:
+                name += "__" + "_".join(path.with_suffix("").parts)
+            if name in names:
+                raise ValueError(f"Duplicate test name: {name}")
+            names.add(name)
+            tests.append({"name": name, "path": str(path), "function": function})
     return tests
 
 
 def discovery_source(tests):
     source = [
-        '"""Generated collection of independent parameter cases."""',
+        '"""Generated collection of native Mojo test functions."""',
         "from std.testing import TestSuite",
     ]
-    modules = sorted({
-        call["target"].split("::")[0] for test in tests for call in test["calls"]
-    })
+    modules = sorted({test["path"] for test in tests})
     aliases = {path: f"module_{index}" for index, path in enumerate(modules)}
     for path, alias in aliases.items():
         module = ".".join(Path(path).with_suffix("").parts)
         source.append(f"import {module} as {alias}")
     for test in tests:
         source.extend(["", f"def {test['name']}() raises:"])
-        for call in test["calls"]:
-            path, function = call["target"].split("::")
-            args = ", ".join(
-                str(arg) if type(arg) in (int, bool) else json.dumps(arg, ensure_ascii=False)
-                for arg in call["args"]
-            )
-            source.append(f"    {aliases[path]}.{function}({args})")
+        source.append(f"    {aliases[test['path']]}.{test['function']}()")
     source.extend([
         "", "def main() raises:",
         "    TestSuite.discover_tests[__functions_in_module()]().run()", "",
@@ -71,29 +56,20 @@ def execution_report(tests, output):
             raise ValueError(f"Duplicate execution result: {name}")
         outcomes[name] = {"PASS": "passed", "FAIL": "failed", "SKIP": "skipped"}[status]
     cases = [
-        {"name": test["name"], "source": test["source"],
+        {"name": test["name"], "source": test["path"],
          "status": outcomes.get(test["name"], "not_run")}
-        for test in tests if "source" in test
+        for test in tests
     ]
     counts = {status: sum(case["status"] == status for case in cases)
               for status in ("passed", "failed", "skipped", "not_run")}
-    regressions = [
-        {"name": test["name"], "status": outcomes.get(test["name"], "not_run")}
-        for test in tests if "source" not in test
-    ]
-    regression_counts = {
-        status: sum(test["status"] == status for test in regressions)
-        for status in counts
-    }
     report = {
-        "collected_tests": len(tests), "compatibility": counts, "cases": cases,
-        "regressions": regression_counts, "regression_cases": regressions,
+        "collected_tests": len(tests), "results": counts, "tests": cases,
     }
     path = Path("build/test-results.json")
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(
-        f"Compatibility results: {counts['passed']} passed, {counts['failed']} failed, "
+        f"Test results: {counts['passed']} passed, {counts['failed']} failed, "
         f"{counts['skipped']} skipped, {counts['not_run']} not run; report: {path}",
         flush=True,
     )
@@ -102,12 +78,11 @@ def execution_report(tests, output):
 
 def main():
     os.chdir(Path(__file__).resolve().parents[1])
-    cases, definitions = validate_baseline()
-    tests = collected_tests(cases, definitions)
+    tests = collected_tests()
     if sys.argv[1:] == ["--list"]:
         for test in tests:
             print(test["name"])
-        print(f"Collected: {len(cases)} compatibility cases, {len(tests) - len(cases)} regressions")
+        print(f"Collected: {len(tests)} Mojo tests")
         return
     mojo = shlex.split(os.environ.get("REQ_MOJO", "pixi run mojo"))
     flags = shlex.split(os.environ.get("REQ_MOJO_FLAGS", "--Werror -I ."))
@@ -132,9 +107,9 @@ def main():
         counts = execution_report(tests, result.stdout + result.stderr)
         result.check_returncode()
         if not sys.argv[1:] and counts != {
-            "passed": len(cases), "failed": 0, "skipped": 0, "not_run": 0,
+            "passed": len(tests), "failed": 0, "skipped": 0, "not_run": 0,
         }:
-            raise RuntimeError("The full compatibility collection did not pass")
+            raise RuntimeError("The full test collection did not pass")
     finally:
         binary.unlink(missing_ok=True)
         entry.unlink(missing_ok=True)

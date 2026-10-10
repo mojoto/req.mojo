@@ -5,7 +5,9 @@ from ._models import Headers, Response
 from ._urls import QueryParams
 from ._types import Bytes
 from ._json import JSONValue
-from ._config import Timeout
+from ._config import Timeout, Limits
+from ._body import RequestBody
+from ._multipart import UploadFile
 from ._auth import Auth
 from ._exceptions import HTTPError
 
@@ -17,6 +19,8 @@ def request(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -24,6 +28,9 @@ def request(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     var client = Client(
         auth=auth,
@@ -31,6 +38,9 @@ def request(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )
     return client.request(
         method,
@@ -38,6 +48,8 @@ def request(
         params=params,
         headers=headers,
         content=content,
+        body=body,
+        files=files,
         data=data,
         json=json,
     )
@@ -50,6 +62,8 @@ def stream(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -57,6 +71,9 @@ def stream(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     var client = Client(
         auth=auth,
@@ -64,6 +81,9 @@ def stream(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )
     var response = client.stream(
         method,
@@ -71,6 +91,8 @@ def stream(
         params=params,
         headers=headers,
         content=content,
+        body=body,
+        files=files,
         data=data,
         json=json,
     )
@@ -89,6 +111,9 @@ def get(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     return request(
         "GET",
@@ -100,6 +125,9 @@ def get(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )
 
 
@@ -113,6 +141,9 @@ def head(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     return request(
         "HEAD",
@@ -124,6 +155,9 @@ def head(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )
 
 
@@ -133,6 +167,8 @@ def post(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -140,6 +176,9 @@ def post(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     return request(
         "POST",
@@ -147,6 +186,8 @@ def post(
         params=params,
         headers=headers,
         content=content,
+        body=body,
+        files=files,
         data=data,
         json=json,
         auth=auth,
@@ -154,6 +195,9 @@ def post(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )
 
 
@@ -163,6 +207,8 @@ def put(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -170,6 +216,9 @@ def put(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     return request(
         "PUT",
@@ -177,6 +226,8 @@ def put(
         params=params,
         headers=headers,
         content=content,
+        body=body,
+        files=files,
         data=data,
         json=json,
         auth=auth,
@@ -184,6 +235,9 @@ def put(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )
 
 
@@ -193,6 +247,8 @@ def patch(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -200,6 +256,9 @@ def patch(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     return request(
         "PATCH",
@@ -207,6 +266,8 @@ def patch(
         params=params,
         headers=headers,
         content=content,
+        body=body,
+        files=files,
         data=data,
         json=json,
         auth=auth,
@@ -214,6 +275,9 @@ def patch(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )
 
 
@@ -223,6 +287,8 @@ def delete(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -230,6 +296,9 @@ def delete(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     return request(
         "DELETE",
@@ -237,6 +306,8 @@ def delete(
         params=params,
         headers=headers,
         content=content,
+        body=body,
+        files=files,
         data=data,
         json=json,
         auth=auth,
@@ -244,6 +315,9 @@ def delete(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )
 
 
@@ -253,6 +327,8 @@ def options(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -260,6 +336,9 @@ def options(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response:
     return request(
         "OPTIONS",
@@ -267,6 +346,8 @@ def options(
         params=params,
         headers=headers,
         content=content,
+        body=body,
+        files=files,
         data=data,
         json=json,
         auth=auth,
@@ -274,4 +355,7 @@ def options(
         follow_redirects=follow_redirects,
         verify=verify,
         ca_file=ca_file,
+        proxy=proxy,
+        trust_env=trust_env,
+        limits=limits,
     )

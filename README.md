@@ -31,7 +31,7 @@ pixi add req
 
 The community recipe is being submitted for review; these commands become
 available once the package is published to the channel.
-Req 0.1.0 uses Mojo **1.1.0**. Pixi installs the matching compiler, libcurl,
+Req uses Mojo **1.1.0**. Pixi installs the matching compiler, libcurl,
 and zlib, together with Req's precompiled module, CPU JSON modules, and native
 shared library. Req loads the native transport from the active Pixi environment
 automatically; no C build or extra linker flags are needed.

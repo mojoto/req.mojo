@@ -6,6 +6,7 @@ from ._exceptions import HTTPError, ErrorKind
 from std.collections import Dict
 from ._urls import URL
 from ._types import Bytes
+from ._body import RequestBody
 from ._json import JSONValue
 from ._utils import is_token, decode_utf8
 from ._transports.default import CurlStream
@@ -65,6 +66,7 @@ struct Request(ImplicitlyCopyable):
     var url: URL
     var headers: Headers
     var content: Optional[Bytes]
+    var body: Optional[RequestBody]
     var _cookie_from_jar: Optional[String]
 
     def __init__(
@@ -74,12 +76,19 @@ struct Request(ImplicitlyCopyable):
         *,
         headers: Headers = Headers(),
         content: Optional[Bytes] = None,
+        body: Optional[RequestBody] = None,
     ) raises HTTPError:
         var target = URL(url)
-        var body: Optional[Bytes] = None
+        var raw_body: Optional[Bytes] = None
         if content:
-            body = content.value().copy()
-        self = Self(method, _url=target^, _headers=headers, _content=body^)
+            raw_body = content.value().copy()
+        self = Self(
+            method,
+            _url=target^,
+            _headers=headers,
+            _content=raw_body^,
+            _body=body,
+        )
 
     def __init__(
         out self,
@@ -88,6 +97,7 @@ struct Request(ImplicitlyCopyable):
         var _url: URL,
         var _headers: Headers,
         var _content: Optional[Bytes],
+        _body: Optional[RequestBody] = None,
     ) raises HTTPError:
         var upper = method.upper()
         self.method = (
@@ -105,6 +115,7 @@ struct Request(ImplicitlyCopyable):
         self.url = _url^
         self.headers = _headers^
         self.content = _content^
+        self.body = _body
         self._cookie_from_jar = None
         self.validate()
 
@@ -113,6 +124,7 @@ struct Request(ImplicitlyCopyable):
         self.url = copy.url
         self.headers = copy.headers
         self.content = None
+        self.body = copy.body
         self._cookie_from_jar = copy._cookie_from_jar
         if copy.content:
             self.content = copy.content.value().copy()
@@ -120,7 +132,14 @@ struct Request(ImplicitlyCopyable):
     def validate(self) raises HTTPError:
         if not is_token(self.method):
             raise HTTPError(ErrorKind.InvalidRequest, "Invalid HTTP method")
-        if self.method.upper() == "HEAD" and self.content:
+        if self.content and self.body:
+            raise HTTPError(
+                ErrorKind.InvalidRequest,
+                "content and body are mutually exclusive",
+            )
+        if self.body:
+            _ = self.body.value()._handle()
+        if self.method.upper() == "HEAD" and (self.content or self.body):
             raise HTTPError(
                 ErrorKind.InvalidRequest, "HEAD requests cannot have a body"
             )
@@ -136,6 +155,14 @@ struct Request(ImplicitlyCopyable):
             )
         if len(lengths) == 1:
             var expected = len(self.content.value()) if self.content else 0
+            if self.body:
+                var size = self.body.value().content_length()
+                if not size:
+                    raise HTTPError(
+                        ErrorKind.InvalidRequest,
+                        "Content-Length requires a known body length",
+                    )
+                expected = size.value()
             var digits = String(expected)
             if lengths[0] != digits:
                 raise HTTPError(

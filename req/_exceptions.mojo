@@ -26,6 +26,7 @@ struct ErrorKind(Equatable, TrivialRegisterPassable, Writable):
     comptime StreamClosed = Self(16)
     comptime StreamNotRead = Self(17)
     comptime StreamConsumed = Self(18)
+    comptime PoolTimeout = Self(19)
 
     def __eq__(self, other: Self) -> Bool:
         return self._code == other._code
@@ -54,6 +55,7 @@ struct ErrorKind(Equatable, TrivialRegisterPassable, Writable):
             "StreamClosed",
             "StreamNotRead",
             "StreamConsumed",
+            "PoolTimeout",
         ]
         if 0 <= self._code < len(names):
             writer.write(names[self._code])

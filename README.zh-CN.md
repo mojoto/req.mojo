@@ -29,7 +29,7 @@ pixi add req
 ```
 
 社区配方正在提交审核；上述命令在包上架后可用。
-Req 0.1.0 使用 Mojo **1.1.0**。Pixi 会安装匹配的编译器、libcurl 和 zlib，
+Req 使用 Mojo **1.1.0**。Pixi 会安装匹配的编译器、libcurl 和 zlib，
 以及 Req 的预编译模块、CPU JSON 模块和原生共享库。
 Req 自动从当前 Pixi 环境加载原生传输层，无需构建 C 库或添加链接参数。
 

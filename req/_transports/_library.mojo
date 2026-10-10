@@ -4,6 +4,7 @@ from std.ffi import OwnedDLHandle, RTLD, c_int
 from std.memory import ArcPointer, Pointer
 from std.os import getenv
 from std.sys import CompilationTarget
+from .._config import Limits
 from .._exceptions import HTTPError, ErrorKind
 
 
@@ -72,14 +73,21 @@ struct NativePool(Movable):
         Float64,
         c_int,
         Int,
+        Int,
+        Float64,
+        Int,
+        Int,
+        Int,
     ) thin abi("C") -> Int
     var transfer_headers: def(Int) thin abi("C") -> c_int
     var header_data: def(Int) thin abi("C") -> Int
     var header_size: def(Int) thin abi("C") -> Int
     var read: def(Int, Int, Int) thin abi("C") -> Int
     var free: def(Int) thin abi("C") -> NoneType
+    var proxy_validate: def(Int) thin abi("C") -> c_int
 
-    def __init__(out self) raises HTTPError:
+    def __init__(out self, limits: Limits = Limits()) raises HTTPError:
+        limits.validate()
         self.library = _load_library()
         self.close = _symbol[type_of(self.close)](
             self.library, "req_pool_close"
@@ -105,10 +113,17 @@ struct NativePool(Movable):
         self.free = _symbol[type_of(self.free)](
             self.library, "req_transfer_free"
         )
-        var create = _symbol[def() thin abi("C") -> Int](
+        self.proxy_validate = _symbol[type_of(self.proxy_validate)](
+            self.library, "req_proxy_validate"
+        )
+        var create = _symbol[def(Int, Int, Float64) thin abi("C") -> Int](
             self.library, "req_pool_new"
         )
-        self.handle = create()
+        self.handle = create(
+            limits.max_connections.value() if limits.max_connections else 0,
+            limits.max_keepalive_connections,
+            limits.keepalive_expiry.value() if limits.keepalive_expiry else -1.0,
+        )
         if not self.handle:
             raise HTTPError(
                 ErrorKind.ConnectError, "Cannot initialize HTTP transport"
