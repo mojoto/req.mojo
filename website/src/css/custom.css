@@ -24,7 +24,7 @@
   --req-muted: #62626b;
   --req-soft: #f6f6f7;
   --req-border: #e8e8eb;
-  --req-gradient: linear-gradient(120deg, #0369a1, #037ab8);
+  --req-brand: #38bdf8;
   --ifm-code-background: #f1f1f3;
 }
 html[data-theme='dark'] {
@@ -57,14 +57,14 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--ifm-color-prima
 html[data-theme='dark'] .req-hero { background: radial-gradient(ellipse at 12% 8%, #172b45 0, transparent 48%), radial-gradient(ellipse at 84% 20%, #1c3150 0, transparent 50%), linear-gradient(180deg, #1e202a, #1b1b1f); }
 .req-hero__intro { text-align: center; max-width: 960px; }
 .req-hero h1 { color: #202534; font-size: clamp(38px, 5.2vw, 64px); font-weight: 750; line-height: 1.16; letter-spacing: -.045em; margin-bottom: 24px; }
-.req-hero h1 span { background: var(--req-gradient); background-clip: text; -webkit-background-clip: text; color: transparent; }
+.req-hero h1 span { color: var(--req-brand); }
 html[data-theme='dark'] .req-hero h1 { color: #f2f3fa; }
-html[data-theme='dark'] .req-hero h1 span { background-image: linear-gradient(120deg, #38bdf8, #bae6fd); }
 .req-hero__intro > p:not(.req-caption) { max-width: 690px; margin: 0 auto; font-size: 18px; line-height: 1.8; color: var(--req-muted); }
 .req-actions { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 32px; }
-.req-primary { background: var(--req-gradient); color: #fff; border: 0; padding: 13px 23px; display: inline-flex; align-items: center; gap: 16px; box-shadow: 0 8px 24px #0369a12b; }
-.req-primary:hover { color: #fff; transform: translateY(-2px); box-shadow: 0 12px 30px #0369a13d; }
-.req-api-link { color: var(--ifm-color-primary); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; padding: 12px 0; }
+.req-primary { background: var(--req-brand); color: #082f49; border: 0; padding: 13px 23px; display: inline-flex; align-items: center; gap: 16px; box-shadow: 0 8px 24px #38bdf82b; }
+.req-primary:hover { color: #082f49; transform: translateY(-2px); box-shadow: 0 12px 30px #38bdf83d; }
+.req-api-link { color: var(--req-brand); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; padding: 12px 0; }
+.req-api-link:hover { color: var(--req-brand); }
 .req-caption { margin: 18px 0 0; color: var(--req-muted); font-size: 13px; letter-spacing: .01em; }
 .req-demo { max-width: 960px; margin: 44px auto 0; }
 .req-demo .tabs { border: 1px solid #daddeaaa; background: #ffffff80; border-radius: 30px; justify-content: center; width: fit-content; max-width: 100%; margin: 0 auto 20px; padding: 4px; }
