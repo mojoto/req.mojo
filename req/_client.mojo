@@ -2,7 +2,8 @@
 
 from std.memory import Pointer
 from std.origin import Origin
-from ._models import Request, Response, Headers
+from ._models import Request, Response, Headers, ResponseHistory
+from std.time import perf_counter_ns
 from ._urls import URL, QueryParams
 from ._types import Bytes
 from ._json import JSONValue
@@ -198,7 +199,7 @@ struct Client(Movable):
         var follow = (
             follow_redirects.value() if follow_redirects else self._follow_redirects
         )
-        var redirects = 0
+        var history = ResponseHistory()
         while True:
             try:
                 for hook in self.event_hooks.request:
@@ -208,93 +209,109 @@ struct Client(Movable):
                 error.url = String(current.url)
                 raise error
             current.validate()
+            var started_at = perf_counter_ns()
             var response = self._transport.handle_request(
                 current, effective_timeout
             )
-            # The client attaches the actual outgoing request regardless of the
-            # metadata supplied by a custom transport.
             response.request = current
             response.url = current.url
+            response.history = history
+            response.next_request = None
+            response._start_timing(started_at)
+            response.cookies = CookieJar()
+            response.cookies.extract(response.headers, current.url)
             self.cookies.extract(response.headers, current.url)
             try:
                 for hook in self.event_hooks.response:
                     hook[](response)
+                if response.is_redirect():
+                    var next_request = self._redirect_request(current, response)
+                    if follow:
+                        if len(history) >= self._max_redirects:
+                            raise HTTPError(
+                                ErrorKind.TooManyRedirects,
+                                "Redirect limit exceeded",
+                                method=current.method,
+                                url=String(current.url),
+                            )
+                        if (
+                            current.url.scheme() == "https"
+                            and next_request.url.scheme() == "http"
+                        ):
+                            raise HTTPError(
+                                ErrorKind.UnsafeRedirect,
+                                "HTTPS redirect would downgrade to HTTP",
+                                method=current.method,
+                                url=String(current.url),
+                            )
+                        response._read_content()
+                        history._append(response^)
+                        current = next_request
+                        continue
+                    response.next_request = next_request
+                if not stream:
+                    response._read_content()
+                return response^
             except error:
                 response.close()
                 error.method = current.method
                 error.url = String(current.url)
                 raise error
-            if not follow or not response.is_redirect():
-                if not stream:
-                    response._read_content()
-                return response^
-            if redirects >= self._max_redirects:
-                raise HTTPError(
-                    ErrorKind.TooManyRedirects,
-                    "Redirect limit exceeded",
-                    method=current.method,
-                    url=String(current.url),
-                )
-            var target = current.url.resolve(response.headers["Location"])
-            if current.url.scheme() == "https" and target.scheme() == "http":
-                raise HTTPError(
-                    ErrorKind.UnsafeRedirect,
-                    "HTTPS redirect would downgrade to HTTP",
-                    method=current.method,
-                    url=String(current.url),
-                )
-            var method = current.method
-            var redirected_headers = current.headers
-            var body: Optional[Bytes] = None
-            var upload = current.body
-            if current.content:
-                body = current.content.value().copy()
-            if (response.status_code == 303 and method != "HEAD") or (
-                response.status_code in [301, 302] and method == "POST"
-            ):
-                method = "GET"
-                body = None
-                upload = None
-                for name in [
-                    "Content-Length",
-                    "Content-Type",
-                    "Content-Encoding",
-                ]:
-                    redirected_headers.remove(name)
-            if target.origin() != current.url.origin():
-                for name in [
-                    "Authorization",
-                    "Proxy-Authorization",
-                    "Cookie",
-                    "Host",
-                ]:
-                    redirected_headers.remove(name)
-            # Select session cookies for the new URL; explicit same-origin Cookie wins.
-            var cookie_from_jar: Optional[String] = None
-            if (
-                (
-                    current._cookie_from_jar
-                    and current.headers.get("Cookie")
-                    == current._cookie_from_jar
-                )
-                or "Cookie" not in current.headers
-                or target.origin() != current.url.origin()
-            ):
-                redirected_headers.remove("Cookie")
-                var cookie = self.cookies.header(target)
-                if cookie:
-                    redirected_headers.set("Cookie", cookie.value())
-                    cookie_from_jar = cookie
-            response.close()
-            current = Request(
-                method,
-                _url=target^,
-                _headers=redirected_headers^,
-                _content=body^,
-                _body=upload,
+
+    def _redirect_request(
+        self, current: Request, response: Response
+    ) raises HTTPError -> Request:
+        var target = current.url.resolve(response.headers["Location"])
+        var method = current.method
+        var redirected_headers = current.headers
+        var body: Optional[Bytes] = None
+        var upload = current.body
+        if current.content:
+            body = current.content.value().copy()
+        if (response.status_code == 303 and method != "HEAD") or (
+            response.status_code in [301, 302] and method == "POST"
+        ):
+            method = "GET"
+            body = None
+            upload = None
+            for name in [
+                "Content-Length",
+                "Content-Type",
+                "Content-Encoding",
+            ]:
+                redirected_headers.remove(name)
+        if target.origin() != current.url.origin():
+            for name in [
+                "Authorization",
+                "Proxy-Authorization",
+                "Cookie",
+                "Host",
+            ]:
+                redirected_headers.remove(name)
+        # Select session cookies for the new URL; explicit same-origin Cookie wins.
+        var cookie_from_jar: Optional[String] = None
+        if (
+            (
+                current._cookie_from_jar
+                and current.headers.get("Cookie") == current._cookie_from_jar
             )
-            current._cookie_from_jar = cookie_from_jar
-            redirects += 1
+            or "Cookie" not in current.headers
+            or target.origin() != current.url.origin()
+        ):
+            redirected_headers.remove("Cookie")
+            var cookie = self.cookies.header(target)
+            if cookie:
+                redirected_headers.set("Cookie", cookie.value())
+                cookie_from_jar = cookie
+        var next_request = Request(
+            method,
+            _url=target^,
+            _headers=redirected_headers^,
+            _content=body^,
+            _body=upload,
+        )
+        next_request._cookie_from_jar = cookie_from_jar
+        return next_request^
 
     def request(
         mut self,

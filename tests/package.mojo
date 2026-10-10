@@ -38,6 +38,9 @@ def main() raises:
     var hooked_response = hooked.get("http://offline.test")
     assert_equal(hooked_response.request.headers["X-Package-Hook"], "yes")
     assert_equal(hooked_response.headers["X-Package-Hook"], "yes")
+    assert_equal(len(hooked_response.history), 0)
+    assert_true(not hooked_response.next_request)
+    assert_true(hooked_response.elapsed() >= 0.0)
     var chunks = String()
     for chunk in hooked_response.iter_text(2):
         chunks += chunk
@@ -63,6 +66,17 @@ def main() raises:
         raise Error("Expected a native library loading error")
 
     var url = getenv("REQ_TEST_URL")
+    var redirected = req.get(
+        url + "/redirect-chain?count=2", follow_redirects=True
+    )
+    assert_equal(len(redirected.history), 2)
+    assert_equal(redirected.history[0].status_code, 302)
+    assert_true(redirected.history[0].elapsed() >= 0.0)
+    var pending = req.get(url + "/redirect-cookie")
+    assert_true(pending.next_request)
+    assert_equal(
+        pending.cookies.get("session", domain="127.0.0.1").value(), "active"
+    )
     var response = req.get(url + "/echo")
     assert_equal(response.status_code, 200)
     assert_equal(response.json()["method"].string_value(), "GET")

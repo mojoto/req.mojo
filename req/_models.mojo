@@ -1,9 +1,9 @@
 """HTTP request, response, and header models."""
 
-from ._utils import MultiItems
-from ._types import StringPairs
+from ._headers import Headers
+from ._cookies import CookieJar
 from ._exceptions import HTTPError, ErrorKind
-from std.collections import Dict
+from std.time import perf_counter_ns
 from ._urls import URL
 from ._types import Bytes
 from ._body import RequestBody
@@ -11,55 +11,8 @@ from ._json import JSONValue
 from ._utils import is_token, decode_utf8
 from ._transports.default import CurlStream
 from ._streams import ByteStream
-from std.memory import Pointer
+from std.memory import Pointer, ArcPointer
 from std.origin import Origin
-
-
-struct Headers(ImplicitlyCopyable, Sized):
-    var _items: MultiItems[True]
-
-    def __init__(out self):
-        self._items = MultiItems[True]()
-
-    def __init__(out self, pairs: StringPairs) raises HTTPError:
-        self._items = MultiItems[True]()
-        for pair in pairs:
-            self._items.add(pair[0], pair[1])
-
-    def __init__(out self, pairs: Dict[String, String]) raises HTTPError:
-        self._items = MultiItems[True]()
-        for entry in pairs.items():
-            self._items.add(entry.key, entry.value)
-
-    def get(self, name: String) -> Optional[String]:
-        return self._items.get(name)
-
-    def get_all(self, name: String) -> List[String]:
-        return self._items.get_all(name)
-
-    def __contains__(self, name: String) -> Bool:
-        return name in self._items
-
-    def __getitem__(self, name: String) raises HTTPError -> String:
-        return self._items[name]
-
-    def __len__(self) -> Int:
-        return len(self._items)
-
-    def items(self) -> StringPairs:
-        return self._items.items()
-
-    def add(mut self, name: String, value: String) raises HTTPError:
-        self._items.add(name, value)
-
-    def set(mut self, name: String, value: String) raises HTTPError:
-        self._items.set(name, value)
-
-    def remove(mut self, name: String):
-        self._items.remove(name)
-
-    def merge(mut self, other: Self) raises HTTPError:
-        self._items.merge(other._items)
 
 
 struct Request(ImplicitlyCopyable):
@@ -179,6 +132,11 @@ struct Response(Movable):
     var url: URL
     var headers: Headers
     var request: Request
+    var history: ResponseHistory
+    var next_request: Optional[Request]
+    var cookies: CookieJar
+    var _started_at: Optional[Int]
+    var _elapsed_seconds: Optional[Float64]
     var _content: Bytes
     var _stream: Optional[ByteStream]
     var _cached: Bool
@@ -205,6 +163,12 @@ struct Response(Movable):
         self.url = request.url
         self.headers = headers
         self.request = request
+        self.history = ResponseHistory()
+        self.next_request = None
+        self.cookies = CookieJar()
+        self.cookies.extract(headers, request.url)
+        self._started_at = None
+        self._elapsed_seconds = None
         self._content = content.copy() if request.method != "HEAD" else Bytes()
         self._stream = None
         self._cached = True
@@ -291,8 +255,12 @@ struct Response(Movable):
         mut self, size: Int
     ) raises HTTPError -> Optional[Bytes]:
         try:
-            return self._stream.value().read_chunk(size)
+            var result = self._stream.value().read_chunk(size)
+            if not result:
+                self.close()
+            return result^
         except error:
+            self.close()
             error.method = self.request.method
             error.url = String(self.url)
             raise error
@@ -312,11 +280,13 @@ struct Response(Movable):
                         break
                     self._content.extend(Span(chunk.value()))
             except error:
+                self.close()
                 error.method = self.request.method
                 error.url = String(self.url)
                 raise error
             self._cached = True
             self._eof = True
+            self.close()
 
     def read(mut self) raises HTTPError -> Bytes:
         self._read_content()
@@ -427,9 +397,36 @@ struct Response(Movable):
                 status_code=self.status_code,
             )
 
+    def _start_timing(mut self, started_at: Int):
+        self._started_at = started_at
+        self._elapsed_seconds = None
+        if self.is_closed():
+            self._finish_timing()
+
+    def _finish_timing(mut self):
+        if self._started_at and not self._elapsed_seconds:
+            self._elapsed_seconds = (
+                Float64(perf_counter_ns() - self._started_at.value())
+                / 1_000_000_000.0
+            )
+
+    def elapsed(self) raises HTTPError -> Float64:
+        """Return seconds from sending the request through closing its response.
+        """
+        if not self._elapsed_seconds:
+            raise HTTPError(
+                ErrorKind.StreamNotRead,
+                (
+                    "Response elapsed time is available after reading or"
+                    " closing the response"
+                ),
+            )
+        return self._elapsed_seconds.value()
+
     def close(mut self):
         if self._stream:
             self._stream.value().close()
+        self._finish_timing()
 
     def is_closed(self) -> Bool:
         return not self._stream or self._stream.value().is_closed()
@@ -447,6 +444,9 @@ struct Response(Movable):
             self.headers,
             self.url,
             self.request,
+            self.history,
+            self.next_request,
+            self.cookies,
         )
 
     def __exit__(mut self):
@@ -464,6 +464,12 @@ struct ResponseContext[origin: Origin[mut=True]](Movable):
     var headers: Headers
     var url: URL
     var request: Request
+    var history: ResponseHistory
+    var next_request: Optional[Request]
+    var cookies: CookieJar
+
+    def elapsed(self) raises HTTPError -> Float64:
+        return self._response[].elapsed()
 
     def content(self) raises HTTPError -> Bytes:
         return self._response[].content()
@@ -625,6 +631,7 @@ struct _ByteIterator[o: Origin[mut=True]](Movable):
                     )
                     if not chunk:
                         self._response[]._eof = True
+                        self._response[].close()
                         self._done = True
                         break
                     result.extend(Span(chunk.value()))
@@ -813,3 +820,53 @@ struct _LineIterator[o: Origin[mut=True]](Movable):
         var result = self._lines[self._index]
         self._index += 1
         return result^
+
+
+struct ResponseHistory(ImplicitlyCopyable, Sized):
+    var _items: List[ArcPointer[Response]]
+
+    def __init__(out self):
+        self._items = List[ArcPointer[Response]]()
+
+    def __init__(out self, *, copy: Self):
+        self._items = copy._items.copy()
+
+    def __len__(self) -> Int:
+        return len(self._items)
+
+    def __getitem__(
+        self, index: Int
+    ) raises HTTPError -> ref[origin_of(self._items)] Response:
+        var offset = index if index >= 0 else len(self._items) + index
+        if offset < 0 or offset >= len(self._items):
+            raise HTTPError(
+                ErrorKind.InvalidRequest,
+                "Response history index is out of range",
+            )
+        # The bounds check and returned origin retain the immutable history entry.
+        return self._items.unsafe_ptr()[unsafe_offset=offset][]
+
+    def _append(mut self, var response: Response):
+        self._items.append(ArcPointer(response^))
+
+    def __iter__(self) -> _HistoryIterator[origin_of(self._items)]:
+        return _HistoryIterator[origin_of(self._items)](
+            self._items.unsafe_ptr(), len(self._items), 0
+        )
+
+
+@fieldwise_init
+struct _HistoryIterator[o: Origin[mut=False]](Movable):
+    var _items: Pointer[ArcPointer[Response], Self.o]
+    var _length: Int
+    var _index: Int
+
+    def __iter__(var self) -> Self:
+        return self^
+
+    def __has_next__(self) -> Bool:
+        return self._index < self._length
+
+    def __next__(mut self) -> ref[Self.o] Response:
+        self._index += 1
+        return self._items[unsafe_offset=self._index - 1][]

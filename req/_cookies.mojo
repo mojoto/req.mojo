@@ -4,7 +4,7 @@ from std.ffi import external_call
 from std.math import isfinite
 from ._exceptions import HTTPError, ErrorKind
 from ._urls import URL
-from ._models import Headers
+from ._headers import Headers
 from ._utils import is_token
 
 
