@@ -6,7 +6,9 @@ from ._utils import encode_utf8
 from ._models import Headers, Request, Response
 from ._urls import QueryParams, URL
 from ._json import JSONValue
-from ._config import Timeout
+from ._config import Timeout, Limits
+from ._body import RequestBody
+from ._multipart import UploadFile
 from ._auth import Auth
 
 from ._cookies import CookieJar

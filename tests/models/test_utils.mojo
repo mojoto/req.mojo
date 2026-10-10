@@ -1,6 +1,7 @@
-from std.testing import assert_equal, assert_true, assert_raises
-from req import encode_utf8, Bytes
-from req._utils import decode_utf8, percent_encode, percent_decode, is_token
+"""Utils tests."""
+from req import Bytes, encode_utf8
+from req._utils import decode_utf8, is_token, percent_decode, percent_encode
+from std.testing import assert_equal, assert_raises, assert_true
 
 
 def test_utf8_round_trip() raises:
@@ -51,6 +52,3 @@ def test_token_classifier_all_ascii_and_byte_boundaries() raises:
         for character in ["雪", "🔥", "K", " ", ":", "\x00"]:
             assert_true(not is_token(name + character))
             assert_true(not is_token(character + name))
-
-
-comptime TEST_FUNCTIONS = __functions_in_module()

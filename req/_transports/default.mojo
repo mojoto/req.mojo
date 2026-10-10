@@ -1,16 +1,19 @@
 """Ownership-safe handles for the native pull-based transport."""
 
-from std.ffi import c_int
+from std.ffi import c_int, c_size_t
 from std.memory import Pointer, ArcPointer
 from .._exceptions import HTTPError, ErrorKind
 from .._types import Bytes
-from .._config import Timeout
+from .._config import Timeout, Limits
+from .._body import RequestBody
 from .._utils import decode_utf8
 from ._library import NativePool, Pool
 
 
-def new_pool() raises HTTPError -> Pool:
-    return ArcPointer(NativePool())
+def new_pool(
+    limits: Limits = Limits(), *, http1: Bool = True, http2: Bool = False
+) raises HTTPError -> Pool:
+    return ArcPointer(NativePool(limits, http1=http1, http2=http2))
 
 
 def close_pool(handle: Pool):
@@ -30,6 +33,7 @@ struct CurlStream(Movable):
     var handle: Int
     var owns_pool: Pool
     var _pool: Pool
+    var _upload_body: Optional[RequestBody]
 
     def __init__(
         out self,
@@ -41,29 +45,51 @@ struct CurlStream(Movable):
         timeout: Timeout,
         verify: Bool,
         ca_file: Optional[String],
+        *,
+        body: Optional[RequestBody] = None,
+        var proxy: String = String(),
+        var no_proxy: String = String(),
+        var ca_path: String = String(),
     ) raises HTTPError:
         self.owns_pool = None
         self._pool = pool
+        self._upload_body = body
         # The native constructor copies the upload before returning.
         var empty = Bytes()
-        var body = (
+        var raw_pointer = (
             content.value().unsafe_ptr() if content else empty.unsafe_ptr()
         )
         var ca = ca_file.value() if ca_file else String()
-        self.handle = pool.value()[].transfer_new(
-            pool.value()[].handle,
-            Int(method.as_c_string_span().ptr()),
-            Int(url.as_c_string_span().ptr()),
-            Int(headers.as_c_string_span().ptr()),
-            Int(body),
-            len(content.value()) if content else 0,
-            c_int(Bool(content)),
-            _seconds(timeout.connect),
-            _seconds(timeout.read),
-            _seconds(timeout.write),
-            c_int(verify),
-            Int(ca.as_c_string_span().ptr()),
-        )
+        # Keep pointer origins through the FFI call so temporary strings remain
+        # alive until libcurl has copied their contents.
+        var upload_handle = body.value()._handle() if body else 0
+        try:
+            var transfer_new = pool.value()[].library.get_function[Int](
+                "req_transfer_new"
+            )
+            self.handle = transfer_new(
+                pool.value()[].handle,
+                method.as_c_string_span().ptr(),
+                url.as_c_string_span().ptr(),
+                headers.as_c_string_span().ptr(),
+                raw_pointer,
+                c_size_t(len(content.value()) if content else 0),
+                c_int(Bool(content)),
+                _seconds(timeout.connect),
+                _seconds(timeout.read),
+                _seconds(timeout.write),
+                c_int(verify),
+                ca.as_c_string_span().ptr(),
+                upload_handle,
+                _seconds(timeout.pool),
+                proxy.as_c_string_span().ptr(),
+                no_proxy.as_c_string_span().ptr(),
+                ca_path.as_c_string_span().ptr(),
+            )
+        except:
+            raise HTTPError(
+                ErrorKind.ConnectError, "Cannot initialize native HTTP transfer"
+            )
         if not self.handle:
             raise HTTPError(
                 ErrorKind.ConnectError, "Cannot initialize HTTP request"
@@ -133,3 +159,4 @@ struct CurlStream(Movable):
             close_pool(self.owns_pool)
             release_pool(self.owns_pool)
         self._pool = None
+        self._upload_body = None

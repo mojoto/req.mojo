@@ -4,6 +4,7 @@ from std.ffi import OwnedDLHandle, RTLD, c_int
 from std.memory import ArcPointer, Pointer
 from std.os import getenv
 from std.sys import CompilationTarget
+from .._config import Limits
 from .._exceptions import HTTPError, ErrorKind
 
 
@@ -59,36 +60,46 @@ struct NativePool(Movable):
     var handle: Int
     var close: def(Int) thin abi("C") -> NoneType
     var release: def(Int) thin abi("C") -> NoneType
-    var transfer_new: def(
-        Int,
-        Int,
-        Int,
-        Int,
-        Int,
-        Int,
-        c_int,
-        Float64,
-        Float64,
-        Float64,
-        c_int,
-        Int,
-    ) thin abi("C") -> Int
     var transfer_headers: def(Int) thin abi("C") -> c_int
     var header_data: def(Int) thin abi("C") -> Int
     var header_size: def(Int) thin abi("C") -> Int
     var read: def(Int, Int, Int) thin abi("C") -> Int
     var free: def(Int) thin abi("C") -> NoneType
 
-    def __init__(out self) raises HTTPError:
+    def __init__(
+        out self,
+        limits: Limits = Limits(),
+        *,
+        http1: Bool = True,
+        http2: Bool = False,
+    ) raises HTTPError:
+        limits.validate()
+        if not http1 and not http2:
+            raise HTTPError(
+                ErrorKind.InvalidRequest,
+                "At least one HTTP protocol must be enabled",
+            )
         self.library = _load_library()
+        if http2:
+            var supported = _symbol[def() thin abi("C") -> c_int](
+                self.library, "req_http2_supported"
+            )
+            var capability = supported()
+            if not capability:
+                raise HTTPError(
+                    ErrorKind.InvalidRequest,
+                    "HTTP/2 requires libcurl built with HTTP/2 support",
+                )
+            if not http1 and capability < 2:
+                raise HTTPError(
+                    ErrorKind.InvalidRequest,
+                    "HTTP/2-only mode requires libcurl 8.10 or later",
+                )
         self.close = _symbol[type_of(self.close)](
             self.library, "req_pool_close"
         )
         self.release = _symbol[type_of(self.release)](
             self.library, "req_pool_release"
-        )
-        self.transfer_new = _symbol[type_of(self.transfer_new)](
-            self.library, "req_transfer_new"
         )
         self.transfer_headers = _symbol[type_of(self.transfer_headers)](
             self.library, "req_transfer_headers"
@@ -105,10 +116,16 @@ struct NativePool(Movable):
         self.free = _symbol[type_of(self.free)](
             self.library, "req_transfer_free"
         )
-        var create = _symbol[def() thin abi("C") -> Int](
-            self.library, "req_pool_new"
+        var create = _symbol[
+            def(Int, Int, Float64, c_int, c_int) thin abi("C") -> Int
+        ](self.library, "req_pool_new")
+        self.handle = create(
+            limits.max_connections.value() if limits.max_connections else 0,
+            limits.max_keepalive_connections,
+            limits.keepalive_expiry.value() if limits.keepalive_expiry else -1.0,
+            c_int(http1),
+            c_int(http2),
         )
-        self.handle = create()
         if not self.handle:
             raise HTTPError(
                 ErrorKind.ConnectError, "Cannot initialize HTTP transport"

@@ -1,5 +1,6 @@
+"""Exceptions tests."""
+from req import ErrorKind, HTTPError
 from std.testing import assert_equal, assert_true
-from req import HTTPError, ErrorKind
 
 
 def raise_timeout() raises HTTPError:
@@ -27,6 +28,3 @@ def test_status_context() raises:
     )
     assert_equal(error.status_code.value(), 404)
     assert_equal(String(error), "HTTPStatusError: HTTP status error")
-
-
-comptime TEST_FUNCTIONS = __functions_in_module()

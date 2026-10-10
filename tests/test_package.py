@@ -33,6 +33,7 @@ def main():
         env = dict(os.environ, CONDA_PREFIX=str(work / "env"))
         env.pop("REQ_NATIVE_LIB", None)
         env.pop("REQ_EXPECT_LOAD_ERROR", None)
+        env.pop("REQ_EXPECT_HTTP2_UNAVAILABLE", None)
         with Fixtures() as fixtures:
             env.update(fixtures.environment)
             command = [compiler, "run", "--Werror", "-I", str(modules), "main.mojo"]
@@ -42,6 +43,22 @@ def main():
                 cwd=work, env=env, check=True, timeout=120,
             )
             subprocess.run(["./main"], cwd=work, env=env, check=True, timeout=30)
+            # Fault injection verifies the capability guard before other symbols
+            # are resolved, using the same installed and compiled consumer.
+            stub = work / "no_http2.c"
+            stub.write_text("int req_http2_supported(void) { return 0; }\n")
+            stub_library = work / native_name
+            shared_flag = "-dynamiclib" if os.uname().sysname == "Darwin" else "-shared"
+            subprocess.run(
+                [os.environ.get("CC", "cc"), "-fPIC", shared_flag,
+                 str(stub), "-o", str(stub_library)],
+                check=True, timeout=30,
+            )
+            subprocess.run(
+                ["./main"], cwd=work,
+                env=dict(env, REQ_NATIVE_LIB=str(stub_library), REQ_EXPECT_HTTP2_UNAVAILABLE="1"),
+                check=True, timeout=30,
+            )
             # Missing transport and an invalid override must report typed errors.
             missing = native.with_suffix(".missing")
             native.rename(missing)

@@ -1,6 +1,11 @@
 """Deterministic HTTP fixtures used only by the test runner."""
 
 import gzip
+import hashlib
+import http.client
+import select
+from email import policy
+from email.parser import BytesParser
 import json
 import socket
 import ssl
@@ -12,6 +17,7 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+from transports.http2_server import HTTP2Handler
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -35,6 +41,25 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def request_chunks(self):
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            while True:
+                size = int(self.rfile.readline().split(b";", 1)[0], 16)
+                if not size:
+                    while self.rfile.readline() != b"\r\n":
+                        pass
+                    return
+                yield self.rfile.read(size)
+                assert self.rfile.read(2) == b"\r\n"
+        else:
+            remaining = int(self.headers.get("Content-Length", "0"))
+            while remaining:
+                chunk = self.rfile.read(min(remaining, 65536))
+                if not chunk:
+                    raise ConnectionError("Truncated upload")
+                remaining -= len(chunk)
+                yield chunk
+
     def dispatch(self):
         path = urlsplit(self.path)
         query = parse_qs(path.query, keep_blank_values=True)
@@ -42,8 +67,27 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(1)
             self.close_connection = True
             return
-        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-        if path.path == "/echo-bytes":
+        if path.path == "/upload-digest":
+            digest = hashlib.sha256()
+            size = 0
+            for chunk in self.request_chunks():
+                digest.update(chunk)
+                size += len(chunk)
+            self.respond(json.dumps({"size": size, "sha256": digest.hexdigest(), "headers": dict(self.headers)}).encode())
+            return
+        body = b"".join(self.request_chunks())
+        if path.path == "/multipart":
+            prefix = f"Content-Type: {self.headers['Content-Type']}\r\nMIME-Version: 1.0\r\n\r\n".encode()
+            message = BytesParser(policy=policy.default).parsebytes(prefix + body)
+            parts = []
+            for part in message.iter_parts():
+                payload = part.get_payload(decode=True)
+                parts.append({"name": part.get_param("name", header="content-disposition"),
+                              "filename": part.get_filename(), "content_type": part.get_content_type(),
+                              "size": len(payload), "sha256": hashlib.sha256(payload).hexdigest(),
+                              "text": payload.decode("utf-8", errors="replace")})
+            self.respond(json.dumps({"parts": parts, "parts_count": len(parts), "headers": dict(self.headers)}).encode())
+        elif path.path == "/echo-bytes":
             self.respond(body, headers=[("Content-Type", "application/octet-stream")])
         elif path.path == "/echo-headers":
             values = self.headers.get_all("X-Repeated", [])
@@ -166,6 +210,63 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_HEAD = do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = dispatch
 
 
+class ProxyHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *_):
+        pass
+
+    def authorized(self):
+        if self.headers.get("Proxy-Authorization") == "Basic dXNlcjpwYXNz":
+            return True
+        self.send_response(407)
+        self.send_header("Proxy-Authenticate", 'Basic realm="test"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
+
+    def do_CONNECT(self):
+        if not self.authorized():
+            return
+        host, port = self.path.rsplit(":", 1)
+        try:
+            with socket.create_connection((host, int(port)), timeout=2) as upstream:
+                self.send_response(200, "Connection established")
+                self.end_headers()
+                self.wfile.flush()
+                while True:
+                    ready, _, _ = select.select([self.connection, upstream], [], [], 2)
+                    if not ready:
+                        break
+                    for source in ready:
+                        data = source.recv(65536)
+                        if not data:
+                            return
+                        (upstream if source is self.connection else self.connection).sendall(data)
+        finally:
+            self.close_connection = True
+
+    def do_GET(self):
+        if not self.authorized():
+            return
+        url = urlsplit(self.path)
+        assert url.scheme == "http"
+        target = http.client.HTTPConnection(url.hostname, url.port, timeout=2)
+        headers = {name: value for name, value in self.headers.items()
+                   if name.lower() not in {"proxy-authorization", "proxy-connection", "connection"}}
+        headers["X-Test-Proxy"] = "forwarded"
+        try:
+            target.request("GET", url.path + ("?" + url.query if url.query else ""), headers=headers)
+            response = target.getresponse()
+            body = response.read()
+            self.send_response(response.status)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        finally:
+            target.close()
+
+
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -182,9 +283,24 @@ class Fixtures:
         config.write_text("[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=localhost\n[ext]\nsubjectAltName=DNS:localhost\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyCertSign\n")
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-config", str(config), "-keyout", str(key), "-out", str(cert)], check=True, capture_output=True)
         self.servers = [Server(("127.0.0.1", 0), Handler) for _ in range(3)]
+        self.servers.append(Server(("127.0.0.1", 0), ProxyHandler))
+        self.servers.append(Server(("127.0.0.1", 0), ProxyHandler))
+        for max_streams in (100, 1):
+            server = Server(("127.0.0.1", 0), HTTP2Handler)
+            server.max_streams = max_streams
+            server.fault_lock = threading.Lock()
+            server.refused_tokens = set()
+            server.http1_handler = Handler
+            self.servers.append(server)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(cert, key)
         self.servers[2].socket = context.wrap_socket(self.servers[2].socket, server_side=True)
+        self.servers[4].socket = context.wrap_socket(self.servers[4].socket, server_side=True)
+        h2_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        h2_context.load_cert_chain(cert, key)
+        h2_context.set_alpn_protocols(["h2", "http/1.1"])
+        for server in self.servers[5:]:
+            server.socket = h2_context.wrap_socket(server.socket, server_side=True)
         self.blackhole = socket.socket()
         self.blackhole.bind(("127.0.0.1", 0))
         self.blackhole.listen()
@@ -205,12 +321,37 @@ class Fixtures:
         self.threads = [threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True) for server in self.servers]
         for thread in self.threads:
             thread.start()
+        upload = root / "upload.bin"
+        upload.write_bytes(bytes(index % 251 for index in range(65537)))
+        empty = root / "empty.bin"
+        empty.touch()
+        changed = root / "changed.bin"
+        changed.write_bytes(b"initial")
+        large = root / "large.bin"
+        with large.open("wb") as output:
+            output.truncate(128 * 1024 * 1024)
+        proxy = f"http://user:pass@127.0.0.1:{self.servers[3].server_port}"
         self.environment = {
             "REQ_TEST_URL": f"http://127.0.0.1:{self.servers[0].server_port}",
             "REQ_TEST_OTHER_URL": f"http://127.0.0.1:{self.servers[1].server_port}",
             "REQ_TEST_TLS_URL": f"https://localhost:{self.servers[2].server_port}",
+            "REQ_TEST_HTTP2_URL": f"https://localhost:{self.servers[5].server_port}",
+            "REQ_TEST_HTTP2_LIMITED_URL": f"https://localhost:{self.servers[6].server_port}",
             "REQ_TEST_BLACKHOLE_URL": f"https://127.0.0.1:{self.blackhole.getsockname()[1]}",
             "REQ_TEST_CA_FILE": str(cert),
+            "REQ_TEST_UPLOAD_FILE": str(upload),
+            "REQ_TEST_EMPTY_FILE": str(empty),
+            "REQ_TEST_CHANGED_FILE": str(changed),
+            "REQ_TEST_LARGE_FILE": str(large),
+            "REQ_TEST_PROXY": proxy,
+            "REQ_TEST_TLS_PROXY": f"https://user:pass@localhost:{self.servers[4].server_port}",
+            "HTTP_PROXY": proxy,
+            "HTTPS_PROXY": proxy,
+            "ALL_PROXY": proxy,
+            "NO_PROXY": "localhost",
+            "http_proxy": "", "https_proxy": "", "all_proxy": "", "no_proxy": "",
+            "SSL_CERT_FILE": str(cert), "SSL_CERT_DIR": "",
+
         }
         return self
 

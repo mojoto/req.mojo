@@ -1,7 +1,7 @@
-"""Run every applicable canonical URL row without deduplicating parameters."""
-from std.testing import assert_equal, assert_true
-from req import URL, ErrorKind
+"""URL canonical tests."""
 from .url_cases import canonical_url_cases, rejected_url_cases
+from req import ErrorKind, URL
+from std.testing import assert_equal, assert_true
 
 
 def test_canonical_absolute_urls() raises:
@@ -24,6 +24,3 @@ def test_rejected_canonical_urls() raises:
             assert_equal(error.kind, ErrorKind.InvalidURL, scenario[0])
             caught = True
         assert_true(caught, scenario[0] + ": " + scenario[1])
-
-
-comptime TEST_FUNCTIONS = __functions_in_module()

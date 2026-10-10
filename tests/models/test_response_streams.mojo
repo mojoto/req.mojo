@@ -1,7 +1,8 @@
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
-from std.os import getenv
-from req import Response, Request, Timeout
+"""Response streams tests."""
+from req import Request, Response, Timeout
 from req._transports.default import CurlStream, new_pool, release_pool
+from std.os import getenv
+from std.testing import assert_equal, assert_raises, assert_true
 
 
 def _response(path: String) raises -> Response:
@@ -46,6 +47,3 @@ def test_stream_response_cache() raises:
     assert_equal(response.text(), "hello world")
     response.close()
     assert_equal(len(response.content()), 11)
-
-
-comptime TEST_FUNCTIONS = __functions_in_module()
