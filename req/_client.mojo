@@ -13,6 +13,7 @@ from ._body import RequestBody
 from ._multipart import UploadFile, encode_multipart, multipart_boundary
 from ._proxy import environment_proxy, environment_no_proxy
 from std.os import getenv
+from std.ffi import c_int
 from ._content import encode_body
 from ._exceptions import HTTPError, ErrorKind
 from ._transports.default import (
@@ -97,12 +98,15 @@ struct Client(Movable):
         for byte in proxy.as_bytes():
             if byte <= 32 or byte == 127:
                 raise HTTPError(ErrorKind.InvalidRequest, "Invalid proxy URL")
-        if (
-            self._pool.value()[].proxy_validate(
-                Int(proxy.as_c_string_span().ptr())
+        var result: Int
+        try:
+            var validate = self._pool.value()[].library.get_function[c_int](
+                "req_proxy_validate"
             )
-            >= 0
-        ):
+            result = Int(validate(proxy.as_c_string_span().ptr()))
+        except:
+            raise HTTPError(ErrorKind.ConnectError, "Cannot validate proxy URL")
+        if result >= 0:
             raise HTTPError(ErrorKind.InvalidRequest, "Invalid proxy URL")
 
     def close(mut self):

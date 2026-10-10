@@ -60,31 +60,11 @@ struct NativePool(Movable):
     var handle: Int
     var close: def(Int) thin abi("C") -> NoneType
     var release: def(Int) thin abi("C") -> NoneType
-    var transfer_new: def(
-        Int,
-        Int,
-        Int,
-        Int,
-        Int,
-        Int,
-        c_int,
-        Float64,
-        Float64,
-        Float64,
-        c_int,
-        Int,
-        Int,
-        Float64,
-        Int,
-        Int,
-        Int,
-    ) thin abi("C") -> Int
     var transfer_headers: def(Int) thin abi("C") -> c_int
     var header_data: def(Int) thin abi("C") -> Int
     var header_size: def(Int) thin abi("C") -> Int
     var read: def(Int, Int, Int) thin abi("C") -> Int
     var free: def(Int) thin abi("C") -> NoneType
-    var proxy_validate: def(Int) thin abi("C") -> c_int
 
     def __init__(
         out self,
@@ -121,9 +101,6 @@ struct NativePool(Movable):
         self.release = _symbol[type_of(self.release)](
             self.library, "req_pool_release"
         )
-        self.transfer_new = _symbol[type_of(self.transfer_new)](
-            self.library, "req_transfer_new"
-        )
         self.transfer_headers = _symbol[type_of(self.transfer_headers)](
             self.library, "req_transfer_headers"
         )
@@ -138,9 +115,6 @@ struct NativePool(Movable):
         )
         self.free = _symbol[type_of(self.free)](
             self.library, "req_transfer_free"
-        )
-        self.proxy_validate = _symbol[type_of(self.proxy_validate)](
-            self.library, "req_proxy_validate"
         )
         var create = _symbol[
             def(Int, Int, Float64, c_int, c_int) thin abi("C") -> Int

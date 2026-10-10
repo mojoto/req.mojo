@@ -1,6 +1,6 @@
 """Ownership-safe handles for the native pull-based transport."""
 
-from std.ffi import c_int
+from std.ffi import c_int, c_size_t
 from std.memory import Pointer, ArcPointer
 from .._exceptions import HTTPError, ErrorKind
 from .._types import Bytes
@@ -47,9 +47,9 @@ struct CurlStream(Movable):
         ca_file: Optional[String],
         *,
         body: Optional[RequestBody] = None,
-        var proxy: String = "",
-        var no_proxy: String = "",
-        var ca_path: String = "",
+        var proxy: String = String(),
+        var no_proxy: String = String(),
+        var ca_path: String = String(),
     ) raises HTTPError:
         self.owns_pool = None
         self._pool = pool
@@ -60,25 +60,36 @@ struct CurlStream(Movable):
             content.value().unsafe_ptr() if content else empty.unsafe_ptr()
         )
         var ca = ca_file.value() if ca_file else String()
-        self.handle = pool.value()[].transfer_new(
-            pool.value()[].handle,
-            Int(method.as_c_string_span().ptr()),
-            Int(url.as_c_string_span().ptr()),
-            Int(headers.as_c_string_span().ptr()),
-            Int(raw_pointer),
-            len(content.value()) if content else 0,
-            c_int(Bool(content)),
-            _seconds(timeout.connect),
-            _seconds(timeout.read),
-            _seconds(timeout.write),
-            c_int(verify),
-            Int(ca.as_c_string_span().ptr()),
-            body.value()._handle() if body else 0,
-            _seconds(timeout.pool),
-            Int(proxy.as_c_string_span().ptr()),
-            Int(no_proxy.as_c_string_span().ptr()),
-            Int(ca_path.as_c_string_span().ptr()),
-        )
+        # Keep pointer origins through the FFI call so temporary strings remain
+        # alive until libcurl has copied their contents.
+        var upload_handle = body.value()._handle() if body else 0
+        try:
+            var transfer_new = pool.value()[].library.get_function[Int](
+                "req_transfer_new"
+            )
+            self.handle = transfer_new(
+                pool.value()[].handle,
+                method.as_c_string_span().ptr(),
+                url.as_c_string_span().ptr(),
+                headers.as_c_string_span().ptr(),
+                raw_pointer,
+                c_size_t(len(content.value()) if content else 0),
+                c_int(Bool(content)),
+                _seconds(timeout.connect),
+                _seconds(timeout.read),
+                _seconds(timeout.write),
+                c_int(verify),
+                ca.as_c_string_span().ptr(),
+                upload_handle,
+                _seconds(timeout.pool),
+                proxy.as_c_string_span().ptr(),
+                no_proxy.as_c_string_span().ptr(),
+                ca_path.as_c_string_span().ptr(),
+            )
+        except:
+            raise HTTPError(
+                ErrorKind.ConnectError, "Cannot initialize native HTTP transfer"
+            )
         if not self.handle:
             raise HTTPError(
                 ErrorKind.ConnectError, "Cannot initialize HTTP request"

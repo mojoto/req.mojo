@@ -12,7 +12,6 @@ struct _NativeBody(Movable):
     var handle: Int
     var free: def(Int) thin abi("C") -> NoneType
     var add_bytes: def(Int, Int, Int) thin abi("C") -> c_int
-    var add_file: def(Int, Int) thin abi("C") -> c_int
     var append: def(Int, Int) thin abi("C") -> c_int
     var length: def(Int) thin abi("C") -> Int
 
@@ -23,9 +22,6 @@ struct _NativeBody(Movable):
         self.free = _symbol[type_of(self.free)](self.library, "req_body_free")
         self.add_bytes = _symbol[type_of(self.add_bytes)](
             self.library, "req_body_bytes"
-        )
-        self.add_file = _symbol[type_of(self.add_file)](
-            self.library, "req_body_file"
         )
         self.append = _symbol[type_of(self.append)](
             self.library, "req_body_append"
@@ -64,11 +60,17 @@ struct RequestBody(ImplicitlyCopyable):
         if "\x00" in path:
             raise HTTPError(ErrorKind.InvalidRequest, "Invalid upload path")
         var body = Self()
-        _check_body(
-            body._source.value()[].add_file(
-                body._handle(), Int(path.as_c_string_span().ptr())
+        var result: c_int
+        try:
+            var add_file = body._source.value()[].library.get_function[c_int](
+                "req_body_file"
             )
-        )
+            result = add_file(body._handle(), path.as_c_string_span().ptr())
+        except:
+            raise HTTPError(
+                ErrorKind.WriteError, "Cannot initialize file upload"
+            )
+        _check_body(result)
         return body
 
     @staticmethod
