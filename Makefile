@@ -2,22 +2,22 @@ MOJO ?= pixi run mojo
 MOJO_FLAGS ?= --Werror -I .
 PYTHON ?= pixi run python
 CFLAGS ?= -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror
-LINK_FLAGS := -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz
+NATIVE_EXT := $(if $(filter Darwin,$(shell uname -s)),dylib,so)
+NATIVE_FLAGS := $(if $(filter Darwin,$(shell uname -s)),-dynamiclib,-shared)
 
 DOCS_DIR := website
 
-.PHONY: install native test build format clean doc-install doc-start doc-build doc-serve doc-clean
+.PHONY: install native test test-package build format clean doc-install doc-start doc-build doc-serve doc-clean
 
 install:
 	pixi install
 	$(MOJO) --version
 
-native: build/libreq_curl.a
+native: build/libreq_curl.$(NATIVE_EXT)
 
-build/libreq_curl.a: req/_transports/_curl.c
+build/libreq_curl.$(NATIVE_EXT): req/_transports/_curl.c
 	mkdir -p build
-	$(CC) $(CFLAGS) -c $< -o build/req_curl.o
-	$(AR) rcs $@ build/req_curl.o
+	$(CC) $(CFLAGS) -fPIC $(NATIVE_FLAGS) $< -lcurl -lz -o $@
 
 test: native
 	REQ_MOJO="$(MOJO)" REQ_MOJO_FLAGS="$(MOJO_FLAGS)" $(PYTHON) tests/run_tests.py $(TEST_ARGS)
@@ -25,6 +25,9 @@ test: native
 build: native
 	mkdir -p build
 	$(MOJO) precompile $(MOJO_FLAGS) req -o build/req.mojoc
+
+test-package: build
+	$(PYTHON) tests/test_package.py
 
 format:
 	$(MOJO) format req tests

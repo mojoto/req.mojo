@@ -19,13 +19,19 @@ pixi install
 make build
 ```
 
-`make build` creates `build/req.mojoc` and `build/libreq_curl.a`.
+`make build` creates `build/req.mojoc` and the native shared library
+`build/libreq_curl.so` on Linux or `build/libreq_curl.dylib` on macOS.
+From the repository root, run an example with `pixi run mojo -I . main.mojo`.
+Req finds the shared library in `build/`; no linker flags are needed.
+For a binary launched from another directory, set `REQ_NATIVE_LIB` to the
+absolute path of the shared library.
 The Pixi manifest pins Mojo 1.1.0 and the JSON dependency.
 
 ## Tests and builds
 
 ```sh
 make test
+make test-package
 make test TEST_ARGS="--list"
 make test TEST_ARGS="--only test_client_requests_and_reuse"
 make format
@@ -39,13 +45,15 @@ names; `--only <name>` selects one case. `build/test-results.json` records the
 observed result for each compatibility identity. See the
 [compatibility inventory](https://github.com/mojoto/req.mojo/blob/main/tests/compat/README.md)
 for coverage and API adaptations.
-It removes temporary test files after the run. `make build` builds the native
+The installed-package check runs precompiled consumers outside the checkout,
+using both `mojo run` and `mojo build`, and verifies native loading errors.
+The runner removes temporary test files after the run. `make build` builds the native
 bridge and precompiles `req`; `make clean` removes native/package build output.
 
 ## Documentation
 
-The website uses **Docusaurus 3.10.1**, **React 19**, and **Node.js 22+**, matching
-[morrow.mojo](https://github.com/mojoto/morrow.mojo). The English source is in
+The website uses **Docusaurus 3.10.1**, **React 19**, and **Node.js 22+**.
+The English source is in
 `website/docs`; Simplified Chinese lives in
 `website/i18n/zh-Hans/docusaurus-plugin-content-docs/current`.
 

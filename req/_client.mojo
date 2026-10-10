@@ -11,7 +11,13 @@ from ._cookies import CookieJar
 from ._config import Timeout
 from ._content import encode_body
 from ._exceptions import HTTPError, ErrorKind
-from ._transports.default import CurlStream, new_pool, close_pool, release_pool
+from ._transports.default import (
+    CurlStream,
+    Pool,
+    new_pool,
+    close_pool,
+    release_pool,
+)
 
 
 struct Client(Movable):
@@ -25,7 +31,7 @@ struct Client(Movable):
     var _max_redirects: Int
     var _verify: Bool
     var _ca_file: Optional[String]
-    var _pool: Int
+    var _pool: Pool
 
     def __init__(
         out self,
@@ -41,7 +47,7 @@ struct Client(Movable):
         verify: Bool = True,
         ca_file: Optional[String] = None,
     ) raises HTTPError:
-        self._pool = 0
+        self._pool = None
         self.cookies = cookies
         self._base_url = URL(base_url) if base_url else None
         self._headers = headers
@@ -68,10 +74,9 @@ struct Client(Movable):
     def close(mut self):
         close_pool(self._pool)
         release_pool(self._pool)
-        self._pool = 0
 
     def is_closed(self) -> Bool:
-        return self._pool == 0
+        return not Bool(self._pool)
 
     def _ensure_open(self) raises HTTPError:
         if self.is_closed():

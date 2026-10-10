@@ -111,14 +111,13 @@ def main():
         return
     mojo = shlex.split(os.environ.get("REQ_MOJO", "pixi run mojo"))
     flags = shlex.split(os.environ.get("REQ_MOJO_FLAGS", "--Werror -I ."))
-    links = ["-Xlinker", "build/libreq_curl.a", "-Xlinker", "-lcurl", "-Xlinker", "-lz"]
     binary = Path(".req-test-suite")
     entry = Path(".req-test-main.mojo")
     Path("build/test-results.json").unlink(missing_ok=True)
     try:
         entry.write_text(discovery_source(tests))
         subprocess.run(
-            [*mojo, "build", *flags, *links, "-o", str(binary), str(entry)],
+            [*mojo, "build", *flags, "-o", str(binary), str(entry)],
             check=True,
         )
         with Fixtures() as fixture:
