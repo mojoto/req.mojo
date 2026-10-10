@@ -135,12 +135,22 @@ def main():
     cc = os.environ.get('CC', 'cc')
     flags = ['-O2', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror']
     run([cc, *flags, '-c', str(output / 'threads.c'), '-o', str(output / 'threads.o')])
+    native_libraries = {}
     for variant in ['baseline', 'current']:
         source = output / variant
-        run([cc, *flags, '-c', str(source / 'req/_transports/_curl.c'), '-o', str(source / 'curl.o')])
+        links = ['-Xlinker', str(output / 'threads.o')]
+        if (source / 'req/_transports/_library.mojo').exists():
+            extension, mode = ('dylib', '-dynamiclib') if platform.system() == 'Darwin' else ('so', '-shared')
+            library = source / ('libreq_curl.' + extension)
+            run([cc, *flags, '-fPIC', mode, str(source / 'req/_transports/_curl.c'),
+                 '-lcurl', '-lz', '-o', str(library)])
+            native_libraries[variant] = str(library)
+        else:
+            # Historical revisions use a static bridge.
+            run([cc, *flags, '-c', str(source / 'req/_transports/_curl.c'), '-o', str(source / 'curl.o')])
+            links += ['-Xlinker', str(source / 'curl.o'), '-Xlinker', '-lcurl', '-Xlinker', '-lz']
         run(['pixi', 'run', 'mojo', 'build', '--Werror', '-O3', '-I', str(source),
-             '-Xlinker', str(source / 'curl.o'), '-Xlinker', str(output / 'threads.o'),
-             '-Xlinker', '-lcurl', '-Xlinker', '-lz', str(output / 'client.mojo'),
+             *links, str(output / 'client.mojo'),
              '-o', str(output / (variant + '-client'))])
     run(['go', 'build', '-o', str(output / 'server'), str(output / 'server.go')])
     metadata = {
@@ -155,6 +165,7 @@ def main():
         'settings': {'rounds': args.rounds, 'seconds': args.seconds, 'sizes': args.sizes, 'concurrency': args.concurrency, 'headers': args.headers, 'upload_size': args.upload_size},
         'source_sha256': {str(p.relative_to(output)): digest(p) for p in output.rglob('*') if p.is_file() and p.suffix in ('.mojo', '.c', '.go', '.py')},
         'binary_sha256': {name: digest(output / name) for name in ['baseline-client', 'current-client', 'server']},
+        'native_sha256': {variant: digest(Path(path)) for variant, path in native_libraries.items()},
     }
     (output / 'environment.json').write_text(json.dumps(metadata, indent=2) + '\n')
     rows = []
@@ -174,6 +185,9 @@ def main():
                             rng.shuffle(order)
                             for variant in order:
                                 env = os.environ | {'BENCH_URL': f'http://{address}/keep/{size}', 'BENCH_SIZE': str(size), 'BENCH_CONCURRENCY': str(concurrency), 'BENCH_SECONDS': str(args.seconds), 'BENCH_HEADERS': str(args.headers), 'BENCH_UPLOAD_SIZE': str(args.upload_size)}
+                                env.pop('REQ_NATIVE_LIB', None)
+                                if variant in native_libraries:
+                                    env['REQ_NATIVE_LIB'] = native_libraries[variant]
                                 result = run([str(output / (variant + '-client'))], env=env, capture_output=True, text=True, timeout=args.seconds + 60)
                                 row = json.loads(result.stdout)
                                 if row['errors'] or row['requests'] <= 0 or row['client_cpu_us'] <= 0 or row['peak_inflight'] != concurrency or not row['connections_reused'] or not row['latency_ns']:

@@ -31,10 +31,10 @@ pixi add req
 
 The community recipe is being submitted for review; these commands become
 available once the package is published to the channel.
-Req 0.1.0 uses Mojo **1.1.0**. Pixi resolves the matching compiler, libcurl,
-and zlib. The package installs `req.mojoc` and the JSON modules into the
-environment's `lib/mojo`, and `libreq_curl.a` into `lib`, so you do not need
-to copy source files or build the C bridge yourself.
+Req 0.1.0 uses Mojo **1.1.0**. Pixi installs the matching compiler, libcurl,
+and zlib, together with Req's precompiled module, CPU JSON modules, and native
+shared library. Req loads the native transport from the active Pixi environment
+automatically; no C build or extra linker flags are needed.
 
 ## Usage
 
@@ -52,18 +52,18 @@ def main() raises:
     print(response.text())
 ```
 
-Compile with the installed native bridge, libcurl, and zlib linked, then run:
+Run the example:
 
-```bash
-pixi run mojo build \
-  -Xlinker .pixi/envs/default/lib/libreq_curl.a \
-  -Xlinker -L.pixi/envs/default/lib \
-  -Xlinker -rpath -Xlinker "$PWD/.pixi/envs/default/lib" \
-  -Xlinker -lcurl -Xlinker -lz main.mojo -o main
-./main
+```sh
+pixi run mojo main.mojo
 ```
 
-`mojo run` ignores the static native bridge passed through `-Xlinker`.
+Or compile it and run the binary inside the Pixi environment:
+
+```sh
+pixi run mojo build main.mojo -o main
+pixi run ./main
+```
 
 See the [getting started guide](https://mojoto.github.io/req.mojo/docs/getting-started)
 for more examples and package integration.

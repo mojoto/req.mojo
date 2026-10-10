@@ -18,13 +18,18 @@ pixi install
 make build
 ```
 
-`make build` 生成 `build/req.mojoc` 和 `build/libreq_curl.a`。
+`make build` 生成 `build/req.mojoc` 和原生共享库：
+Linux 下为 `build/libreq_curl.so`，macOS 下为 `build/libreq_curl.dylib`。
+在仓库根目录运行示例：`pixi run mojo -I . main.mojo`。
+Req 自动从 `build/` 加载共享库，无需添加链接参数。
+如果在其他目录启动编译好的程序，可通过 `REQ_NATIVE_LIB` 指定共享库的绝对路径。
 Pixi 配置固定 Mojo 1.1.0 和 JSON 依赖版本。
 
 ## 测试和构建
 
 ```sh
 make test
+make test-package
 make test TEST_ARGS="--list"
 make test TEST_ARGS="--only test_client_requests_and_reuse"
 make format
@@ -35,7 +40,7 @@ make clean
 
 ## 文档网站
 
-网站使用 **Docusaurus 3.10.1**、**React 19** 和 **Node.js 22+**，与 [morrow.mojo](https://github.com/mojoto/morrow.mojo) 一致。英文源文档位于 `website/docs`，简体中文位于 `website/i18n/zh-Hans/docusaurus-plugin-content-docs/current`。
+网站使用 **Docusaurus 3.10.1**、**React 19** 和 **Node.js 22+**。英文源文档位于 `website/docs`，简体中文位于 `website/i18n/zh-Hans/docusaurus-plugin-content-docs/current`。
 
 ```sh
 make doc-install

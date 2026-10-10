@@ -112,13 +112,11 @@ runs for 0.5 seconds and validates its results.
 ```sh
 make native
 pixi run mojo build --Werror -O3 -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
   benchmarks/cpu.mojo -o build/cpu-bench
 BENCH_CPU_MODE=headers BENCH_CPU_SIZE=64 build/cpu-bench
 BENCH_CPU_MODE=token BENCH_CPU_SIZE=256 build/cpu-bench
 
 pixi run mojo build --Werror -O3 -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
   benchmarks/request_cpu.mojo -o build/request-cpu
 BENCH_URL_KIND=short BENCH_UPLOAD_SIZE=0 build/request-cpu
 BENCH_URL_KIND=long BENCH_UPLOAD_SIZE=0 build/request-cpu

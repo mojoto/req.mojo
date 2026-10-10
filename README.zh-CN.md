@@ -29,9 +29,9 @@ pixi add req
 ```
 
 社区配方正在提交审核；上述命令在包上架后可用。
-Req 0.1.0 使用 Mojo **1.1.0**，Pixi 会解析匹配的编译器、libcurl 和 zlib。
-包将 `req.mojoc` 和 JSON 模块安装到环境的 `lib/mojo`，
-将 `libreq_curl.a` 安装到 `lib`，无需复制源码或自行构建 C 桥接库。
+Req 0.1.0 使用 Mojo **1.1.0**。Pixi 会安装匹配的编译器、libcurl 和 zlib，
+以及 Req 的预编译模块、CPU JSON 模块和原生共享库。
+Req 自动从当前 Pixi 环境加载原生传输层，无需构建 C 库或添加链接参数。
 
 ## 用法
 
@@ -49,18 +49,18 @@ def main() raises:
     print(response.text())
 ```
 
-编译时链接已安装的原生桥接库、libcurl 和 zlib，然后运行：
+直接运行示例：
 
-```bash
-pixi run mojo build \
-  -Xlinker .pixi/envs/default/lib/libreq_curl.a \
-  -Xlinker -L.pixi/envs/default/lib \
-  -Xlinker -rpath -Xlinker "$PWD/.pixi/envs/default/lib" \
-  -Xlinker -lcurl -Xlinker -lz main.mojo -o main
-./main
+```sh
+pixi run mojo main.mojo
 ```
 
-`mojo run` 会忽略通过 `-Xlinker` 传入的静态桥接库。
+也可以编译后在 Pixi 环境内运行：
+
+```sh
+pixi run mojo build main.mojo -o main
+pixi run ./main
+```
 
 更多示例和包集成方式见[快速开始](https://mojoto.github.io/req.mojo/zh-Hans/docs/getting-started)。
 

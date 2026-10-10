@@ -1,28 +1,25 @@
 """Ownership-safe handles for the native pull-based transport."""
 
-from std.ffi import external_call, c_int
-from std.memory import Pointer
+from std.ffi import c_int
+from std.memory import Pointer, ArcPointer
 from .._exceptions import HTTPError, ErrorKind
 from .._types import Bytes
 from .._config import Timeout
 from .._utils import decode_utf8
+from ._library import NativePool, Pool
 
 
-def new_pool() raises HTTPError -> Int:
-    var handle = external_call["req_pool_new", Int]()
-    if not handle:
-        raise HTTPError(
-            ErrorKind.ConnectError, "Cannot initialize HTTP transport"
-        )
-    return handle
+def new_pool() raises HTTPError -> Pool:
+    return ArcPointer(NativePool())
 
 
-def close_pool(handle: Int):
-    external_call["req_pool_close", NoneType](handle)
+def close_pool(handle: Pool):
+    if handle:
+        handle.value()[].close(handle.value()[].handle)
 
 
-def release_pool(handle: Int):
-    external_call["req_pool_release", NoneType](handle)
+def release_pool(mut handle: Pool):
+    handle = None
 
 
 def _seconds(value: Optional[Float64]) -> Float64:
@@ -31,11 +28,12 @@ def _seconds(value: Optional[Float64]) -> Float64:
 
 struct CurlStream(Movable):
     var handle: Int
-    var owns_pool: Int
+    var owns_pool: Pool
+    var _pool: Pool
 
     def __init__(
         out self,
-        pool: Int,
+        pool: Pool,
         var method: String,
         var url: String,
         var headers: String,
@@ -44,34 +42,33 @@ struct CurlStream(Movable):
         verify: Bool,
         ca_file: Optional[String],
     ) raises HTTPError:
-        self.owns_pool = 0
+        self.owns_pool = None
+        self._pool = pool
         # The native constructor copies the upload before returning.
         var empty = Bytes()
         var body = (
             content.value().unsafe_ptr() if content else empty.unsafe_ptr()
         )
         var ca = ca_file.value() if ca_file else String()
-        self.handle = external_call["req_transfer_new", Int](
-            pool,
-            method.as_c_string_span().ptr(),
-            url.as_c_string_span().ptr(),
-            headers.as_c_string_span().ptr(),
-            body,
+        self.handle = pool.value()[].transfer_new(
+            pool.value()[].handle,
+            Int(method.as_c_string_span().ptr()),
+            Int(url.as_c_string_span().ptr()),
+            Int(headers.as_c_string_span().ptr()),
+            Int(body),
             len(content.value()) if content else 0,
             c_int(Bool(content)),
             _seconds(timeout.connect),
             _seconds(timeout.read),
             _seconds(timeout.write),
             c_int(verify),
-            ca.as_c_string_span().ptr(),
+            Int(ca.as_c_string_span().ptr()),
         )
         if not self.handle:
             raise HTTPError(
                 ErrorKind.ConnectError, "Cannot initialize HTTP request"
             )
-        var error = Int(
-            external_call["req_transfer_headers", c_int](self.handle)
-        )
+        var error = Int(self._pool.value()[].transfer_headers(self.handle))
         if error >= 0:
             self.close()
             raise HTTPError(
@@ -82,16 +79,15 @@ struct CurlStream(Movable):
             )
 
     def __deinit__(deinit self):
-        external_call["req_transfer_free", NoneType](self.handle)
+        if self.handle:
+            self._pool.value()[].free(self.handle)
         if self.owns_pool:
             close_pool(self.owns_pool)
             release_pool(self.owns_pool)
 
     def headers(self) raises HTTPError -> String:
-        var address = external_call["req_transfer_header_data", Int](
-            self.handle
-        )
-        var size = external_call["req_transfer_header_size", Int](self.handle)
+        var address = self._pool.value()[].header_data(self.handle)
+        var size = self._pool.value()[].header_size(self.handle)
         var pointer = Pointer[UInt8, ImmutAnyOrigin](
             unsafe_from_address=address
         )
@@ -119,8 +115,8 @@ struct CurlStream(Movable):
             raise HTTPError(
                 ErrorKind.InvalidRequest, "Read buffer must not be empty"
             )
-        var count = external_call["req_transfer_read", Int](
-            self.handle, buffer.unsafe_ptr(), len(buffer)
+        var count = self._pool.value()[].read(
+            self.handle, Int(buffer.unsafe_ptr()), len(buffer)
         )
         if count < 0:
             self.close()
@@ -130,9 +126,10 @@ struct CurlStream(Movable):
         return count
 
     def close(mut self):
-        external_call["req_transfer_free", NoneType](self.handle)
+        if self.handle:
+            self._pool.value()[].free(self.handle)
         self.handle = 0
         if self.owns_pool:
             close_pool(self.owns_pool)
             release_pool(self.owns_pool)
-            self.owns_pool = 0
+        self._pool = None

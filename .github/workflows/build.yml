@@ -75,26 +75,7 @@ jobs:
           echo "mojo_version=${mojo_version}" >> "${GITHUB_OUTPUT}"
 
       - name: Test and precompile package
-        run: make test build
-
-      - name: Verify precompiled package
-        shell: bash
-        run: |
-          trap 'rm -f build/package-smoke.mojo .req-test-package' EXIT
-          cat > build/package-smoke.mojo <<'MOJO'
-          from std.testing import assert_equal
-          from req import Client, JSONValue
-
-
-          def main() raises:
-              assert_equal(JSONValue.parse('{"value":42}')["value"].int_value(), 42)
-              var client = Client()
-              client.close()
-          MOJO
-          pixi run mojo build --Werror -I build \
-            -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
-            build/package-smoke.mojo -o .req-test-package
-          ./.req-test-package
+        run: make test build test-package
 
       - name: Create release archive
         shell: bash
@@ -104,9 +85,18 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           archive="req-${PACKAGE_VERSION}-mojo-${MOJO_VERSION}-${PLATFORM}"
+          native=build/libreq_curl.so
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then native=build/libreq_curl.dylib; fi
           mkdir -p "build/dist/${archive}"
-          cp build/req.mojoc build/libreq_curl.a LICENSE README.md pixi.toml pixi.lock "build/dist/${archive}/"
+          cp build/req.mojoc "${native}" LICENSE README.md pixi.toml pixi.lock "build/dist/${archive}/"
           COPYFILE_DISABLE=1 tar -czf "build/dist/${archive}.tar.gz" -C build/dist "${archive}"
+
+      - name: Verify extracted release archive
+        shell: bash
+        run: |
+          mkdir -p build/extracted
+          tar -xzf build/dist/*.tar.gz -C build/extracted
+          pixi run python tests/test_package.py --package-dir build/extracted/*
 
       - name: Upload release archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
