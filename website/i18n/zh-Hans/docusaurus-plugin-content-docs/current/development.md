@@ -4,6 +4,23 @@ title: 开发指南
 
 # 开发指南
 
+## 从源码开发
+
+日常使用请按[快速开始](./getting-started.md)通过社区频道安装。
+从源码开发需要 [Pixi](https://pixi.sh)、C 编译器、支持 TLS 的 libcurl 7.85+ 和 zlib。
+macOS 安装 Command Line Tools；Debian/Ubuntu 安装
+`build-essential libcurl4-openssl-dev zlib1g-dev openssl`。
+
+```sh
+git clone https://github.com/mojoto/req.mojo.git
+cd req.mojo
+pixi install
+make build
+```
+
+`make build` 生成 `build/req.mojoc` 和 `build/libreq_curl.a`。
+Pixi 配置固定 Mojo 1.1.0 和 JSON 依赖版本。
+
 ## 测试和构建
 
 ```sh

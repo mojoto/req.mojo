@@ -4,6 +4,24 @@ title: Development
 
 # Development
 
+## Develop from source
+
+For normal use, install from the community channel as described in
+[getting started](./getting-started.md). Source development requires
+[Pixi](https://pixi.sh), a C compiler, libcurl 7.85+ with TLS support, and zlib.
+Install Command Line Tools on macOS, or
+`build-essential libcurl4-openssl-dev zlib1g-dev openssl` on Debian/Ubuntu.
+
+```sh
+git clone https://github.com/mojoto/req.mojo.git
+cd req.mojo
+pixi install
+make build
+```
+
+`make build` creates `build/req.mojoc` and `build/libreq_curl.a`.
+The Pixi manifest pins Mojo 1.1.0 and the JSON dependency.
+
 ## Tests and builds
 
 ```sh
