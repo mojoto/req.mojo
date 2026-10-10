@@ -6,29 +6,30 @@ title: Getting Started
 
 Install Req and send your first HTTP request from Mojo.
 
-## Requirements
+## Install with Pixi
 
-Use Mojo **1.1.0**, [Pixi](https://pixi.sh), a C compiler, and libcurl **7.85+**
-with TLS support, and zlib. On macOS install the Command Line Tools
-(`xcode-select --install`). On Debian/Ubuntu install
-`build-essential libcurl4-openssl-dev zlib1g-dev openssl`.
-
-## Build from source
+From a Pixi workspace
+[already configured for Mojo](https://docs.modular.com/mojo/manual/install/),
+add the official Modular Community channel and install Req:
 
 ```sh
-git clone https://github.com/mojoto/req.mojo.git
-cd req.mojo
-pixi install
-make build
+pixi workspace channel add --prepend https://repo.prefix.dev/modular-community
+pixi add req
 ```
 
-`make build` creates `build/libreq_curl.a` and `build/req.mojoc`. The Pixi
-manifest pins the compiler and native JSON dependency. Precompiled `.mojoc`
-files require a compatible compiler; use the project's pinned version.
+The community recipe is being submitted for review; these commands become
+available once the package is published to the channel.
+Req 0.1.0 uses Mojo **1.1.0**. Pixi resolves the matching compiler, libcurl,
+and zlib. The package includes precompiled `req.mojoc`, its CPU JSON modules,
+and the native bridge `libreq_curl.a`. Modules are installed into the
+environment's `lib/mojo`, and the native library into `lib`, so you do not
+need to copy source files or build the bridge yourself.
+
+Supported platforms are Linux x86-64, Linux ARM64, and macOS ARM64.
 
 ## Send a request
 
-Save this as `main.mojo` in the repository root:
+Save this as `main.mojo` in your workspace root:
 
 ```mojo
 import req
@@ -45,17 +46,23 @@ def main() raises:
 Compile with the native bridge, libcurl, and zlib linked, then run:
 
 ```sh
-pixi run mojo build -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
-  main.mojo -o build/main
-./build/main
+pixi run mojo build \
+  -Xlinker .pixi/envs/default/lib/libreq_curl.a \
+  -Xlinker -L.pixi/envs/default/lib \
+  -Xlinker -rpath -Xlinker "$PWD/.pixi/envs/default/lib" \
+  -Xlinker -lcurl -Xlinker -lz main.mojo -o main
+./main
 ```
 
 `mojo run` ignores the static native bridge passed through `-Xlinker`.
 
-`-I .` imports the source package. For a consumer using the precompiled package,
-add its directory to the import path and link the native bridge and libcurl as
-well. Importing `req` alone does not link the C transport.
+The compiler finds the installed Mojo modules through the active environment.
+The command above uses Pixi's default environment at `.pixi/envs/default`;
+adjust the paths when using a named environment. Importing `req` alone does
+not link the C transport. The runtime library path loads libcurl and zlib
+from the same environment.
+
+For source builds and contributor dependencies, see [development](./development.md).
 
 External examples require network access. The project's tests use local fixtures.
 Continue with [requests](./requests.md) or [persistent clients](./clients.md).

@@ -20,20 +20,25 @@ Language: English | [中文](README.zh-CN.md)
 
 ## Installation
 
-Requires [Pixi](https://pixi.sh), a C compiler, libcurl 7.85+ with TLS support,
-and zlib. Install Command Line Tools on macOS, or
-`build-essential libcurl4-openssl-dev zlib1g-dev openssl` on Debian/Ubuntu.
+From a Pixi workspace
+[already configured for Mojo](https://docs.modular.com/mojo/manual/install/),
+add the official Modular Community channel and install Req:
 
 ```bash
-git clone https://github.com/mojoto/req.mojo.git
-cd req.mojo
-pixi install
-make build
+pixi workspace channel add --prepend https://repo.prefix.dev/modular-community
+pixi add req
 ```
+
+The community recipe is being submitted for review; these commands become
+available once the package is published to the channel.
+Req 0.1.0 uses Mojo **1.1.0**. Pixi resolves the matching compiler, libcurl,
+and zlib. The package installs `req.mojoc` and the JSON modules into the
+environment's `lib/mojo`, and `libreq_curl.a` into `lib`, so you do not need
+to copy source files or build the C bridge yourself.
 
 ## Usage
 
-Save the following example as `main.mojo` in the repository root:
+Save the following example as `main.mojo` in your workspace root:
 
 ```mojo
 import req
@@ -47,13 +52,15 @@ def main() raises:
     print(response.text())
 ```
 
-Compile with the native bridge, libcurl, and zlib linked, then run:
+Compile with the installed native bridge, libcurl, and zlib linked, then run:
 
 ```bash
-pixi run mojo build -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
-  main.mojo -o build/main
-./build/main
+pixi run mojo build \
+  -Xlinker .pixi/envs/default/lib/libreq_curl.a \
+  -Xlinker -L.pixi/envs/default/lib \
+  -Xlinker -rpath -Xlinker "$PWD/.pixi/envs/default/lib" \
+  -Xlinker -lcurl -Xlinker -lz main.mojo -o main
+./main
 ```
 
 `mojo run` ignores the static native bridge passed through `-Xlinker`.
