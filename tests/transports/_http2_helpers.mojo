@@ -18,7 +18,9 @@ def _fails(mut client: Client, path: String, kind: ErrorKind) raises:
     try:
         _ = client.get(path, timeout=Timeout(1.0))
     except error:
-        assert_true(error.kind in [kind, ErrorKind.ProtocolError], String(error))
+        assert_true(
+            error.kind in [kind, ErrorKind.ProtocolError], String(error)
+        )
         assert_equal(error.method, "GET")
         assert_true(path in error.url.value())
         caught = True

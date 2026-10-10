@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+before=$(git diff --binary -- req tests | git hash-object --stdin)
+make format
+after=$(git diff --binary -- req tests | git hash-object --stdin)
+
+if [ "$before" != "$after" ]; then
+    echo "Formatting changed files. Review and stage them, then commit again." >&2
+    exit 1
+fi
