@@ -364,14 +364,25 @@ struct Response(Movable):
     ) raises HTTPError -> _TextIterator[origin_of(self)]:
         var codec = self._text_encoding(encoding)
         return _TextIterator[origin_of(self)](
-            self.iter_bytes(), chunk_size, codec
+            _ByteIterator[origin_of(self)](
+                Pointer(to=self), chunk_size, coalesce=False
+            ),
+            chunk_size,
+            codec,
         )
 
     def iter_lines(
         mut self, *, encoding: Optional[String] = None
     ) raises HTTPError -> _LineIterator[origin_of(self)]:
         return _LineIterator[origin_of(self)](
-            self.iter_text(4096, encoding=encoding)
+            _TextIterator[origin_of(self)](
+                _ByteIterator[origin_of(self)](
+                    Pointer(to=self), 4096, coalesce=False
+                ),
+                4096,
+                self._text_encoding(encoding),
+                coalesce=False,
+            )
         )
 
     def json(self) raises HTTPError -> JSONValue:
@@ -496,7 +507,9 @@ struct ResponseContext[origin: Origin[mut=True]](Movable):
         mut self, chunk_size: Int = 65536, *, encoding: Optional[String] = None
     ) raises HTTPError -> _TextIterator[Self.origin]:
         return _TextIterator[Self.origin](
-            self.iter_bytes(),
+            _ByteIterator[Self.origin](
+                self._response, chunk_size, coalesce=False
+            ),
             chunk_size,
             self._response[]._text_encoding(encoding),
         )
@@ -505,7 +518,14 @@ struct ResponseContext[origin: Origin[mut=True]](Movable):
         mut self, *, encoding: Optional[String] = None
     ) raises HTTPError -> _LineIterator[Self.origin]:
         return _LineIterator[Self.origin](
-            self.iter_text(4096, encoding=encoding)
+            _TextIterator[Self.origin](
+                _ByteIterator[Self.origin](
+                    self._response, 4096, coalesce=False
+                ),
+                4096,
+                self._response[]._text_encoding(encoding),
+                coalesce=False,
+            )
         )
 
     def text(
@@ -554,6 +574,7 @@ struct _ByteIterator[o: Origin[mut=True]](Movable):
     var _response: Pointer[Response, Self.o]
     var _size: Int
     var _raw: Bool
+    var _coalesce: Bool
     var _started: Bool
     var _done: Bool
     var _offset: Int
@@ -565,6 +586,7 @@ struct _ByteIterator[o: Origin[mut=True]](Movable):
         size: Int,
         *,
         raw: Bool = False,
+        coalesce: Bool = True,
     ) raises HTTPError:
         if size <= 0:
             raise HTTPError(
@@ -573,6 +595,7 @@ struct _ByteIterator[o: Origin[mut=True]](Movable):
         self._response = response
         self._size = size
         self._raw = raw
+        self._coalesce = coalesce
         self._started = False
         self._done = False
         self._offset = 0
@@ -635,6 +658,8 @@ struct _ByteIterator[o: Origin[mut=True]](Movable):
                         self._done = True
                         break
                     result.extend(Span(chunk.value()))
+                    if result and not self._coalesce:
+                        break
             except error:
                 self._response[].close()
                 error.method = self._response[].request.method
@@ -668,13 +693,19 @@ struct _TextIterator[o: Origin[mut=True]](Movable):
     var _bytes: _ByteIterator[Self.o]
     var _size: Int
     var _codec: String
+    var _coalesce: Bool
     var _pending: Bytes
     var _text: String
     var _done: Bool
     var _ready: Optional[String]
 
     def __init__(
-        out self, var bytes: _ByteIterator[Self.o], size: Int, codec: String
+        out self,
+        var bytes: _ByteIterator[Self.o],
+        size: Int,
+        codec: String,
+        *,
+        coalesce: Bool = True,
     ) raises HTTPError:
         if size <= 0:
             raise HTTPError(
@@ -695,6 +726,7 @@ struct _TextIterator[o: Origin[mut=True]](Movable):
         self._bytes = bytes^
         self._size = size
         self._codec = codec
+        self._coalesce = coalesce
         self._pending = Bytes()
         self._text = String()
         self._done = False
@@ -716,6 +748,8 @@ struct _TextIterator[o: Origin[mut=True]](Movable):
             return self._ready.take()
         try:
             while not self._done and len(self._text.codepoints()) < self._size:
+                if self._text and not self._coalesce:
+                    break
                 var chunk = self._bytes.next_chunk()
                 self._done = not Bool(chunk)
                 if chunk:

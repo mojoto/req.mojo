@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -197,20 +199,31 @@ int req_proxy_validate(const char *proxy) {
 }
 
 typedef struct Transfer Transfer;
+typedef struct Connection Connection;
+struct Connection {
+    Connection *next;
+    curl_socket_t socket;
+    size_t users;
+    double idle_since;
+    int retired;
+    struct curl_slist *key;
+};
 typedef struct {
     CURLM *multi;
     Transfer *head;
+    Connection *connections;
     size_t refs;
     int closed;
     int http1, http2;
     size_t max_connections, max_keepalive;
-    double keepalive_expiry, last_activity;
+    double keepalive_expiry;
 } Pool;
 
 struct Transfer {
     Pool *pool;
     Transfer *next;
     CURL *easy;
+    Connection *connection;
     struct curl_slist *request_headers;
     struct curl_slist *connection_key;
     unsigned char *upload;
@@ -239,6 +252,122 @@ static double now_seconds(void) {
     return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
 }
 
+static void release_connection(Transfer *t) {
+    if (!t->connection) return;
+    if (!--t->connection->users) t->connection->idle_since = now_seconds();
+    t->connection = NULL;
+}
+
+static int same_key(struct curl_slist *a, struct curl_slist *b) {
+    while (a && b && !strcmp(a->data, b->data)) { a = a->next; b = b->next; }
+    return !a && !b;
+}
+
+static int on_socket(void *context, curl_socket_t socket, curlsocktype purpose) {
+    Pool *p = context;
+    (void)purpose;
+    Connection *connection = calloc(1, sizeof(*connection));
+    if (!connection) return CURL_SOCKOPT_ERROR;
+    connection->socket = socket;
+    connection->next = p->connections;
+    p->connections = connection;
+    return CURL_SOCKOPT_OK;
+}
+
+static int on_close_socket(void *context, curl_socket_t socket) {
+    Pool *p = context;
+    Connection **link = &p->connections;
+    while (*link && (*link)->socket != socket) link = &(*link)->next;
+    if (*link) {
+        Connection *connection = *link;
+        for (Transfer *t = p->head; t; t = t->next)
+            if (t->connection == connection) t->connection = NULL;
+        *link = connection->next;
+        curl_slist_free_all(connection->key);
+        free(connection);
+    }
+    return close(socket);
+}
+
+static int endpoint_matches(struct sockaddr_storage *address, const char *ip, int port) {
+    char text[INET6_ADDRSTRLEN];
+    const void *bytes;
+    int actual_port;
+    if (address->ss_family == AF_INET) {
+        struct sockaddr_in *v4 = (struct sockaddr_in *)address;
+        bytes = &v4->sin_addr;
+        actual_port = ntohs(v4->sin_port);
+    } else if (address->ss_family == AF_INET6) {
+        struct sockaddr_in6 *v6 = (struct sockaddr_in6 *)address;
+        bytes = &v6->sin6_addr;
+        actual_port = ntohs(v6->sin6_port);
+    } else return 0;
+    return actual_port == port && inet_ntop(address->ss_family, bytes, text, sizeof(text)) &&
+           !strcmp(text, ip);
+}
+
+static int on_request(void *context, char *remote_ip, char *local_ip,
+                      int remote_port, int local_port) {
+    Transfer *t = context;
+    release_connection(t); /* A retry may have selected another connection. */
+    for (Connection *c = t->pool->connections; c; c = c->next) {
+        struct sockaddr_storage local, remote;
+        socklen_t local_size = sizeof(local), remote_size = sizeof(remote);
+        if (!getsockname(c->socket, (struct sockaddr *)&local, &local_size) &&
+            !getpeername(c->socket, (struct sockaddr *)&remote, &remote_size) &&
+            endpoint_matches(&local, local_ip, local_port) &&
+            endpoint_matches(&remote, remote_ip, remote_port)) {
+            if (!same_key(c->key, t->connection_key)) {
+                struct curl_slist *key = NULL;
+                for (struct curl_slist *part = t->connection_key; part; part = part->next) {
+                    struct curl_slist *next = curl_slist_append(key, part->data);
+                    if (!next) {
+                        curl_slist_free_all(key);
+                        t->error = 3;
+                        return CURL_PREREQFUNC_ABORT;
+                    }
+                    key = next;
+                }
+                curl_slist_free_all(c->key);
+                c->key = key;
+            }
+            t->connection = c;
+            c->users++;
+            c->idle_since = 0;
+            return CURL_PREREQFUNC_OK;
+        }
+    }
+    /* A peer may have closed the socket before libcurl notices. Allow its
+       normal dead-connection retry to select and register a new socket. */
+    return CURL_PREREQFUNC_OK;
+}
+
+static void expire_connections(Pool *p) {
+    if (p->keepalive_expiry < 0) return;
+    double now = now_seconds();
+    for (Connection *c = p->connections; c; c = c->next) {
+        if (!c->users && c->idle_since && now - c->idle_since >= p->keepalive_expiry) {
+            /* Let libcurl detect and close the retired socket. It still owns
+               the descriptor; closing it here could target a reused fd. */
+            shutdown(c->socket, SHUT_RDWR);
+            c->idle_since = 0;
+            c->retired = 1;
+        }
+    }
+}
+
+static int needs_fresh_connection(Transfer *t) {
+    int retired = 0;
+    for (Connection *c = t->pool->connections; c; c = c->next) {
+        retired |= c->retired;
+        if (!c->retired && !c->users && c->idle_since &&
+            same_key(c->key, t->connection_key)) return 0;
+    }
+    /* In particular, HTTP/2 can select a retired socket before detecting EOF.
+       Reconnect before starting an upload, so a one-shot body stays unsent. */
+    return retired;
+}
+
 static void release_pool(Pool *p) {
     if (--p->refs == 0) {
         curl_multi_cleanup(p->multi);
@@ -250,7 +379,6 @@ static void finish(Transfer *t, int error) {
     if (t->done) return;
     t->error = error;
     t->done = 1;
-    t->pool->last_activity = now_seconds();
     if (t->easy) {
         /* libcurl cancels individual HTTP/2 streams and retires broken
            connections itself. FORBID_REUSE would discard healthy peers. */
@@ -258,6 +386,7 @@ static void finish(Transfer *t, int error) {
         curl_easy_cleanup(t->easy);
         t->easy = NULL;
     }
+    release_connection(t);
 }
 
 static int configure_decoders(Transfer *t) {
@@ -477,14 +606,13 @@ static int can_multiplex(Transfer *t) {
         long version = 0;
         curl_easy_getinfo(other->easy, CURLINFO_HTTP_VERSION, &version);
         if (version != CURL_HTTP_VERSION_2_0) continue;
-        struct curl_slist *a = t->connection_key, *b = other->connection_key;
-        while (a && b && !strcmp(a->data, b->data)) { a = a->next; b = b->next; }
-        if (!a && !b) return 1;
+        if (same_key(t->connection_key, other->connection_key)) return 1;
     }
     return 0;
 }
 
 static void admit_transfers(Pool *p) {
+    expire_connections(p);
     size_t active = active_connections(p);
     for (Transfer *t = p->head; t; t = t->next) {
         if (t->done || t->admitted) continue;
@@ -494,11 +622,9 @@ static void admit_transfers(Pool *p) {
                 finish(t, 19);
             continue;
         }
-        if (!active && p->last_activity && p->keepalive_expiry >= 0 &&
-            now_seconds() - p->last_activity >= p->keepalive_expiry) {
-            curl_multi_cleanup(p->multi);
-            p->multi = curl_multi_init();
-            if (!p->multi) { finish(t, 2); return; }
+        if (curl_easy_setopt(t->easy, CURLOPT_FRESH_CONNECT,
+                !multiplex && needs_fresh_connection(t) ? 1L : 0L) != CURLE_OK) {
+            finish(t, 6); continue;
         }
         if (curl_multi_setopt(p->multi, CURLMOPT_MAXCONNECTS,
                 (long)(p->max_keepalive ? p->max_keepalive : 1)) != CURLM_OK ||
@@ -640,10 +766,13 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     SET(CURLOPT_NOPROXY, no_proxy);
     SET(CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
     if (!p->max_keepalive || p->keepalive_expiry == 0) SET(CURLOPT_FORBID_REUSE, 1L);
-    long max_age = LONG_MAX;
-    if (p->keepalive_expiry >= 0 && p->keepalive_expiry < (double)LONG_MAX)
-        max_age = (long)(p->keepalive_expiry < 1 ? 1 : p->keepalive_expiry);
-    SET(CURLOPT_MAXAGE_CONN, max_age);
+    SET(CURLOPT_MAXAGE_CONN, LONG_MAX);
+    SET(CURLOPT_SOCKOPTFUNCTION, on_socket);
+    SET(CURLOPT_SOCKOPTDATA, p);
+    SET(CURLOPT_CLOSESOCKETFUNCTION, on_close_socket);
+    SET(CURLOPT_CLOSESOCKETDATA, p);
+    SET(CURLOPT_PREREQFUNCTION, on_request);
+    SET(CURLOPT_PREREQDATA, t);
     SET(CURLOPT_NETRC, CURL_NETRC_IGNORED);
     SET(CURLOPT_SSL_VERIFYPEER, verify ? 1L : 0L);
     SET(CURLOPT_SSL_VERIFYHOST, verify ? 2L : 0L);
@@ -665,7 +794,7 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     SET(CURLOPT_XFERINFOFUNCTION, on_progress);
     SET(CURLOPT_XFERINFODATA, t);
     SET(CURLOPT_PRIVATE, t);
-    if (p->http2) {
+    {
         CURLU *parsed = curl_url();
         char *scheme = NULL, *host = NULL, *port = NULL;
         if (!parsed || curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK ||

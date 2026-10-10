@@ -3,6 +3,7 @@ import req
 from req import Client, ErrorKind, Limits, Timeout
 from std.math import inf, nan
 from std.os import getenv
+from std.time import sleep
 from std.testing import assert_equal, assert_raises, assert_true
 
 
@@ -122,3 +123,82 @@ def test_keepalive_limit_after_concurrent_streams() raises:
     var a = next_first.json()["connection"].int_value()
     var b = next_second.json()["connection"].int_value()
     assert_true(not ((a == one and b == two) or (a == two and b == one)))
+
+
+def test_keepalive_expiry_with_an_active_connection() raises:
+    var client = Client(
+        base_url=getenv("REQ_TEST_URL"), limits=Limits(keepalive_expiry=0.1)
+    )
+    var active = client.stream("GET", "/bytes")
+    var first = client.get("/echo").json()["connection"].int_value()
+    assert_equal(client.get("/echo").json()["connection"].int_value(), first)
+    sleep(0.2)
+    assert_true(client.get("/echo").json()["connection"].int_value() != first)
+    assert_equal(len(active.read()), 200000)
+
+
+def test_keepalive_expiry_preserves_active_http2_peers() raises:
+    var client = Client(
+        base_url=getenv("REQ_TEST_HTTP2_URL"),
+        ca_file=getenv("REQ_TEST_CA_FILE"),
+        http2=True,
+        limits=Limits(keepalive_expiry=0.1),
+    )
+    var active = client.stream("GET", "/bytes")
+    var connection = active.headers["X-Connection"]
+    assert_equal(client.get("/echo").headers["X-Connection"], connection)
+    sleep(0.2)
+    assert_equal(client.get("/echo").headers["X-Connection"], connection)
+    assert_equal(len(active.read()), 200000)
+
+
+def test_keepalive_expiry_uses_each_connections_idle_time() raises:
+    var client = Client(limits=Limits(keepalive_expiry=0.2))
+    var url = getenv("REQ_TEST_URL") + "/echo"
+    var other_url = getenv("REQ_TEST_OTHER_URL") + "/echo"
+    var first = client.get(url).json()["connection"].int_value()
+    sleep(0.15)
+    var recent = client.get(other_url).json()["connection"].int_value()
+    sleep(0.1)
+    assert_true(client.get(url).json()["connection"].int_value() != first)
+    assert_equal(client.get(other_url).json()["connection"].int_value(), recent)
+
+
+def test_keepalive_expiry_disabled_with_an_active_connection() raises:
+    var client = Client(
+        base_url=getenv("REQ_TEST_URL"), limits=Limits(keepalive_expiry=None)
+    )
+    var active = client.stream("GET", "/bytes")
+    var first = client.get("/echo").json()["connection"].int_value()
+    sleep(0.2)
+    assert_equal(client.get("/echo").json()["connection"].int_value(), first)
+    assert_equal(len(active.read()), 200000)
+
+
+def test_keepalive_expiry_preserves_unsent_bodies() raises:
+    for http2 in [False, True]:
+        var client = Client(
+            http2=http2,
+            ca_file=getenv("REQ_TEST_CA_FILE"),
+            limits=Limits(keepalive_expiry=0.1),
+        )
+        var url = (
+            getenv("REQ_TEST_HTTP2_URL" if http2 else "REQ_TEST_URL") + "/echo"
+        )
+        var active = client.stream(
+            "GET", getenv("REQ_TEST_OTHER_URL") + "/bytes"
+        )
+        var first = client.get(url).json()["connection"].int_value()
+        sleep(0.2)
+        var chunks = List[req.Bytes]()
+        chunks.append(req.encode_utf8("unsent"))
+        var response = client.post(
+            url, body=req.RequestBody.from_chunks(chunks)
+        )
+        assert_equal(response.json()["body"].string_value(), "unsent")
+        var connection = response.json()["connection"].int_value()
+        assert_true(connection != first)
+        assert_equal(
+            client.get(url).json()["connection"].int_value(), connection
+        )
+        assert_equal(len(active.read()), 200000)

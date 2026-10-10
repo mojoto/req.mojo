@@ -2,7 +2,57 @@
 
 from std.os import getenv
 from std.testing import assert_equal, assert_true
-from req import Client, Bytes, ErrorKind, encode_utf8
+from req import Client, Bytes, ErrorKind, Timeout, encode_utf8
+
+
+def test_iter_text_returns_before_stream_eof() raises:
+    var client = Client(
+        base_url=getenv("REQ_TEST_URL"), timeout=Timeout(read=0.1)
+    )
+    var response = client.stream("GET", "/open-text")
+    var chunks = response.iter_text(1)
+    assert_equal(chunks.next_chunk().value(), "你")
+    assert_true(not response.is_closed())
+    response.close()
+
+
+def test_context_iter_text_returns_before_stream_eof() raises:
+    var client = Client(
+        base_url=getenv("REQ_TEST_URL"), timeout=Timeout(read=0.1)
+    )
+    var text: String
+    var closed: Bool
+    with client.stream("GET", "/open-text") as response:
+        var chunks = response.iter_text(1)
+        text = chunks.next_chunk().value()
+        closed = response.is_closed()
+    assert_equal(text, "你")
+    assert_true(not closed)
+
+
+def test_iter_lines_returns_before_stream_eof() raises:
+    var client = Client(
+        base_url=getenv("REQ_TEST_URL"), timeout=Timeout(read=0.1)
+    )
+    var response = client.stream("GET", "/open-text")
+    var lines = response.iter_lines()
+    assert_equal(lines.next_chunk().value(), "你好")
+    assert_true(not response.is_closed())
+    response.close()
+
+
+def test_context_iter_lines_returns_before_stream_eof() raises:
+    var client = Client(
+        base_url=getenv("REQ_TEST_URL"), timeout=Timeout(read=0.1)
+    )
+    var text: String
+    var closed: Bool
+    with client.stream("GET", "/open-text") as response:
+        var lines = response.iter_lines()
+        text = lines.next_chunk().value()
+        closed = response.is_closed()
+    assert_equal(text, "你好")
+    assert_true(not closed)
 
 
 def test_iter_bytes_native_compression_matrix() raises:

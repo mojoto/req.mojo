@@ -173,6 +173,15 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
             time.sleep(0.35)
             self.wfile.write(b"rest")
+        elif path.path == "/open-text":
+            self.send_response(200)
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            first = "你好\n".encode()
+            self.wfile.write(f"{len(first):x}\r\n".encode() + first + b"\r\n")
+            self.wfile.flush()
+            time.sleep(0.35)
+            self.wfile.write(b"4\r\nrest\r\n0\r\n\r\n")
         elif path.path == "/truncated":
             self.send_response(200)
             self.send_header("Content-Length", "100")
