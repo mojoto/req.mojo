@@ -303,7 +303,13 @@ static int map_error(CURLcode code, Transfer *t) {
     case CURLE_OPERATION_TIMEDOUT: return t->connected ? 8 : 7;
     case CURLE_SEND_ERROR: case CURLE_READ_ERROR: case CURLE_UPLOAD_FAILED: return 4;
     case CURLE_BAD_CONTENT_ENCODING: return 13;
-    case CURLE_RECV_ERROR: case CURLE_PARTIAL_FILE: return 3;
+    case CURLE_PARTIAL_FILE: {
+        /* An incomplete HTTP/2 response is a protocol failure. */
+        long version = 0;
+        curl_easy_getinfo(t->easy, CURLINFO_HTTP_VERSION, &version);
+        return version == CURL_HTTP_VERSION_2_0 ? 6 : 3;
+    }
+    case CURLE_RECV_ERROR: return 3;
     default: return 6;
     }
 }

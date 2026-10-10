@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import DataReceived, RequestReceived, StreamEnded, StreamReset
+from h2.events import ConnectionTerminated, DataReceived, RequestReceived, StreamEnded, StreamReset
 from h2.exceptions import H2Error
 from h2.settings import SettingCodes
 from hyperframe.frame import GoAwayFrame, HeadersFrame, PingFrame
@@ -180,7 +180,11 @@ class HTTP2Handler(BaseRequestHandler):
                     return
                 for event in connection.receive_data(data):
                     stream = getattr(event, "stream_id", None)
-                    if isinstance(event, RequestReceived):
+                    if isinstance(event, ConnectionTerminated):
+                        # Older nghttp2 versions reject malformed responses with
+                        # GOAWAY instead of RST_STREAM. Complete the shutdown.
+                        disconnect()
+                    elif isinstance(event, RequestReceived):
                         requests[stream] = {"headers": dict(event.headers), "digest": hashlib.sha256(),
                                             "size": 0, "body": bytearray(), "window_updates": 0}
                     elif isinstance(event, DataReceived):

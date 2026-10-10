@@ -23,7 +23,7 @@ jobs:
   test:
     name: Test and build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 20 }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -58,89 +58,6 @@ jobs:
 
       - name: Verify isolated package consumers
         run: make test-package
-
-      - name: Diagnose macOS HTTP2 backend
-        if: always() && runner.os == 'macOS'
-        run: |
-          cat > build/diagnose-http2.py <<'PY'
-          import ctypes as c
-          import os
-          from pathlib import Path
-          import subprocess
-          import sys
-          sys.path.insert(0, 'tests')
-          from conftest import Fixtures
-
-          subprocess.run(['sw_vers'])
-          subprocess.run(['/usr/bin/curl', '--version'])
-          subprocess.run(['otool', '-L', 'build/libreq_curl.dylib'])
-          source = Path('req/_transports/_curl.c').read_text()
-          source = source.replace('SET(CURLOPT_URL, url);', 'SET(CURLOPT_VERBOSE, 1L); SET(CURLOPT_URL, url);')
-          source = source.replace('if (t->done) return;', 'if (t->done) return; fprintf(stderr, "REQ finish error=%d paused=%d body=%zu/%zu\\n", error, t->paused, t->body_offset, t->body_size);', 1)
-          source = source.replace('size_t n = size * count;\n    if (!t->receiving', 'size_t n = size * count;\n    fprintf(stderr, "REQ body n=%zu receiving=%d buffered=%zu/%zu\\n", n, t->receiving, t->body_offset, t->body_size);\n    if (!t->receiving', 1)
-          source = source.replace('Transfer *t = NULL;\n            curl_easy_getinfo', 'fprintf(stderr, "REQ CURLMSG_DONE result=%d %s\\n", message->data.result, curl_easy_strerror(message->data.result));\n            Transfer *t = NULL;\n            curl_easy_getinfo', 1)
-          fixture = Path('tests/transports/http2_server.py')
-          fixture.write_text(fixture.read_text().replace('except (ConnectionError, TimeoutError, H2Error):\n            pass', 'except (ConnectionError, TimeoutError, H2Error) as error:\n            print("FIXTURE ERROR", repr(error), flush=True)'))
-          with Fixtures() as f:
-              os.environ.update(f.environment)
-              url = f.environment['REQ_TEST_HTTP2_URL']
-              ca = f.environment['REQ_TEST_CA_FILE']
-              print('CURL CLI BAD LENGTH', flush=True)
-              subprocess.run(['/usr/bin/curl', '--http2', '--noproxy', '*', '--cacert', ca, '--max-time', '2', '-v', url + '/bad-length'])
-              for variant in ['baseline', 'prefetch']:
-                  print('BRIDGE', variant, flush=True)
-                  path = Path('build') / ('diagnostic-' + variant + '.c')
-                  path.write_text(source if variant == 'baseline' else source.replace('!t->receiving || t->body_size != t->body_offset', 't->body_size != t->body_offset'))
-                  output = path.with_suffix('.dylib')
-                  subprocess.run(['cc', '-O0', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-fPIC', '-dynamiclib', str(path), '-lcurl', '-lz', '-o', str(output)], check=True)
-                  lib = c.CDLL(str(output.resolve()))
-                  lib.req_pool_new.argtypes=[c.c_size_t,c.c_size_t,c.c_double,c.c_int,c.c_int]; lib.req_pool_new.restype=c.c_void_p
-                  lib.req_transfer_new.argtypes=[c.c_void_p,c.c_char_p,c.c_char_p,c.c_char_p,c.c_char_p,c.c_size_t,c.c_int,c.c_double,c.c_double,c.c_double,c.c_int,c.c_char_p,c.c_void_p,c.c_double,c.c_char_p,c.c_char_p,c.c_char_p]; lib.req_transfer_new.restype=c.c_void_p
-                  lib.req_transfer_headers.argtypes=[c.c_void_p]; lib.req_transfer_headers.restype=c.c_int
-                  lib.req_transfer_read.argtypes=[c.c_void_p,c.c_void_p,c.c_size_t]; lib.req_transfer_read.restype=c.c_int64
-                  for fn in ['req_transfer_free','req_pool_close','req_pool_release']: getattr(lib,fn).argtypes=[c.c_void_p]
-                  pool=lib.req_pool_new(100,20,5,1,1)
-                  for route in ['/bad-length', '/echo']:
-                      print('REQUEST', route, flush=True)
-                      t=lib.req_transfer_new(pool,b'GET',(url+route).encode(),b'',b'',0,0,1,1,1,1,ca.encode(),None,1,b'',b'',b'')
-                      status=lib.req_transfer_headers(t)
-                      buf=c.create_string_buffer(16384); reads=[]
-                      if status < 0:
-                          while True:
-                              n=lib.req_transfer_read(t,buf,16384); reads.append(n)
-                              if n <= 0: break
-                      print('RESULT', status, reads, flush=True)
-                      lib.req_transfer_free(t)
-                  lib.req_pool_close(pool); lib.req_pool_release(pool)
-          PY
-          pixi run python build/diagnose-http2.py > build/http2-diagnostic.log 2>&1
-          cat build/http2-diagnostic.log
-
-      - name: Open temporary macOS SSH debug session
-        id: debug
-        if: always() && github.event_name == 'workflow_dispatch' && runner.os == 'macOS'
-        uses: owenthereal/action-upterm@175d33786004a53b1538bcf157402b7197ce5029 # v2
-        with:
-          limit-access-to-actor: true
-          detached: true
-          upterm-version: v0.36.0
-          wait-timeout-minutes: 20
-
-      - name: Save SSH connection details
-        if: always() && github.event_name == 'workflow_dispatch' && runner.os == 'macOS'
-        env:
-          SSH_COMMAND: ${{ steps.debug.outputs.ssh-command }}
-        run: |
-          mkdir -p build
-          printf '%s\n' "$SSH_COMMAND" > build/debug-ssh.txt
-
-      - name: Upload SSH connection details
-        if: always() && github.event_name == 'workflow_dispatch' && runner.os == 'macOS'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: macos-debug-ssh
-          path: build/debug-ssh.txt
-          retention-days: 1
 
       - name: Upload test results
         if: always()
