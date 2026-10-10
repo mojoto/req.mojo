@@ -14,3 +14,7 @@ from ._auth import Auth
 from ._cookies import CookieJar
 from ._client import Client
 from ._api import request, stream, get, head, post, put, patch, delete, options
+
+from ._streams import SyncByteStream, ByteStream
+from ._transports.base import BaseTransport, Transport, MockTransport
+from ._transports.http import HTTPTransport

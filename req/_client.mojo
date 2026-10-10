@@ -11,18 +11,10 @@ from ._cookies import CookieJar
 from ._config import Timeout, Limits
 from ._body import RequestBody
 from ._multipart import UploadFile, encode_multipart, multipart_boundary
-from ._proxy import environment_proxy, environment_no_proxy
-from std.os import getenv
-from std.ffi import c_int
 from ._content import encode_body
 from ._exceptions import HTTPError, ErrorKind
-from ._transports.default import (
-    CurlStream,
-    Pool,
-    new_pool,
-    close_pool,
-    release_pool,
-)
+from ._transports.base import Transport
+from ._transports.http import HTTPTransport
 
 
 struct Client(Movable):
@@ -34,12 +26,8 @@ struct Client(Movable):
     var _timeout: Timeout
     var _follow_redirects: Bool
     var _max_redirects: Int
-    var _verify: Bool
-    var _ca_file: Optional[String]
-    var _pool: Pool
-    var _proxy: Optional[String]
-    var _trust_env: Bool
-    var _ca_path: String
+    var _transport: Transport
+    var _closed: Bool
 
     def __init__(
         out self,
@@ -59,8 +47,8 @@ struct Client(Movable):
         limits: Limits = Limits(),
         http1: Bool = True,
         http2: Bool = False,
+        transport: Transport = Transport(),
     ) raises HTTPError:
-        self._pool = None
         self.cookies = cookies
         self._base_url = URL(base_url) if base_url else None
         self._headers = headers
@@ -69,52 +57,32 @@ struct Client(Movable):
         self._timeout = timeout
         self._follow_redirects = follow_redirects
         self._max_redirects = max_redirects
-        self._verify = verify
-        self._ca_file = ca_file
-        self._proxy = proxy
-        self._trust_env = trust_env
-        self._ca_path = String()
-        if trust_env and not ca_file:
-            var file = getenv("SSL_CERT_FILE")
-            if file:
-                self._ca_file = file
-            self._ca_path = getenv("SSL_CERT_DIR")
         timeout.validate()
         if max_redirects < 0 or (not verify and ca_file):
             raise HTTPError(
                 ErrorKind.InvalidRequest,
                 "Invalid redirect limit or TLS configuration",
             )
-        self._pool = new_pool(limits, http1=http1, http2=http2)
-        if proxy:
-            self._validate_proxy(proxy.value())
-
-    def __deinit__(deinit self):
-        # Mojo may destroy an owner after its last use. Active responses retain
-        # the pool; explicit close() and context exit cancel those responses.
-        release_pool(self._pool)
-
-    def _validate_proxy(self, var proxy: String) raises HTTPError:
-        for byte in proxy.as_bytes():
-            if byte <= 32 or byte == 127:
-                raise HTTPError(ErrorKind.InvalidRequest, "Invalid proxy URL")
-        var result: Int
-        try:
-            var validate = self._pool.value()[].library.get_function[c_int](
-                "req_proxy_validate"
+        self._transport = transport if transport._state else Transport(
+            HTTPTransport(
+                verify=verify,
+                ca_file=ca_file,
+                proxy=proxy,
+                trust_env=trust_env,
+                limits=limits,
+                http1=http1,
+                http2=http2,
             )
-            result = Int(validate(proxy.as_c_string_span().ptr()))
-        except:
-            raise HTTPError(ErrorKind.ConnectError, "Cannot validate proxy URL")
-        if result >= 0:
-            raise HTTPError(ErrorKind.InvalidRequest, "Invalid proxy URL")
+        )
+        self._closed = False
 
     def close(mut self):
-        close_pool(self._pool)
-        release_pool(self._pool)
+        if not self._closed:
+            self._closed = True
+            self._transport.close()
 
     def is_closed(self) -> Bool:
-        return not Bool(self._pool)
+        return self._closed or self._transport.is_closed()
 
     def _ensure_open(self) raises HTTPError:
         if self.is_closed():
@@ -229,37 +197,13 @@ struct Client(Movable):
         var redirects = 0
         while True:
             current.validate()
-            var headers = String()
-            for pair in current.headers.items():
-                headers += (
-                    pair[0] + (";" if not pair[1] else ": " + pair[1]) + "\n"
-                )
-            var proxy = self._proxy.value() if self._proxy else (
-                environment_proxy(
-                    current.url.scheme()
-                ) if self._trust_env else String()
+            var response = self._transport.handle_request(
+                current, effective_timeout
             )
-            if proxy:
-                self._validate_proxy(proxy)
-            var no_proxy = (
-                environment_no_proxy() if self._trust_env
-                and not self._proxy else String()
-            )
-            var source = CurlStream(
-                self._pool,
-                current.method,
-                String(current.url),
-                headers,
-                current.content,
-                effective_timeout,
-                self._verify,
-                self._ca_file,
-                body=current.body,
-                proxy=proxy,
-                no_proxy=no_proxy,
-                ca_path=self._ca_path,
-            )
-            var response = Response.from_stream(source^, current)
+            # The client attaches the actual outgoing request regardless of the
+            # metadata supplied by a custom transport.
+            response.request = current
+            response.url = current.url
             self.cookies.extract(response.headers, current.url)
             if not follow or not response.is_redirect():
                 if not stream:

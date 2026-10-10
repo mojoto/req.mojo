@@ -10,7 +10,16 @@ def surviving_response(url: String) raises -> req.Response:
     return client.stream("GET", url)
 
 
+def mock_response(request: req.Request) raises req.HTTPError -> req.Response:
+    return req.Response(
+        200, request=request, content=req.encode_utf8("offline")
+    )
+
+
 def main() raises:
+    var offline = req.Client(transport=req.MockTransport(mock_response))
+    assert_equal(offline.get("http://offline.test").text(), "offline")
+    offline.close()
     if getenv("REQ_EXPECT_HTTP2_UNAVAILABLE"):
         try:
             _ = req.Client(http2=True)

@@ -8,6 +8,7 @@ from .._config import Timeout, Limits
 from .._body import RequestBody
 from .._utils import decode_utf8
 from ._library import NativePool, Pool
+from .._streams import SyncByteStream
 
 
 def new_pool(
@@ -29,7 +30,7 @@ def _seconds(value: Optional[Float64]) -> Float64:
     return value.value() if value else -1.0
 
 
-struct CurlStream(Movable):
+struct CurlStream(SyncByteStream):
     var handle: Int
     var owns_pool: Pool
     var _pool: Pool

@@ -10,6 +10,7 @@ from ._body import RequestBody
 from ._json import JSONValue
 from ._utils import is_token, decode_utf8
 from ._transports.default import CurlStream
+from ._streams import ByteStream
 from std.memory import Pointer
 from std.origin import Origin
 
@@ -179,7 +180,7 @@ struct Response(Movable):
     var headers: Headers
     var request: Request
     var _content: Bytes
-    var _stream: Optional[CurlStream]
+    var _stream: Optional[ByteStream]
     var _cached: Bool
     var _consumed: Bool
     var _eof: Bool
@@ -255,6 +256,25 @@ struct Response(Movable):
             reason_phrase=String(status[2]) if len(status) == 3 else String(),
             http_version=String(status[0]),
         )
+        response._stream = ByteStream(source^)
+        response._cached = False
+        return response^
+
+    @staticmethod
+    def from_byte_stream(
+        var source: ByteStream,
+        request: Request,
+        *,
+        status_code: Int = 200,
+        headers: Headers = Headers(),
+        http_version: String = "HTTP/1.1",
+    ) raises HTTPError -> Self:
+        var response = Self(
+            status_code,
+            request=request,
+            headers=headers,
+            http_version=http_version,
+        )
         response._stream = source^
         response._cached = False
         return response^
@@ -291,13 +311,12 @@ struct Response(Movable):
         if not self._cached:
             if self._consumed or self.is_closed():
                 self._require_content()
-            var buffer = Bytes(length=16384, fill=0)
             try:
                 while True:
-                    var count = self._stream.value()._read_into(buffer)
-                    if count == 0:
+                    var chunk = self._stream.value().read_chunk(16384)
+                    if not chunk:
                         break
-                    self._content.extend(Span(buffer)[:count])
+                    self._content.extend(Span(chunk.value()))
             except error:
                 error.method = self.request.method
                 error.url = String(self.url)
@@ -400,7 +419,7 @@ struct Response(Movable):
             self._stream.value().close()
 
     def is_closed(self) -> Bool:
-        return not self._stream or not self._stream.value().handle
+        return not self._stream or self._stream.value().is_closed()
 
     def __enter__(
         mut self,
