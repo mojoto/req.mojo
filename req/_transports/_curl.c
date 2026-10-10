@@ -224,7 +224,7 @@ struct Transfer {
     size_t header_size, header_capacity;
     unsigned char body[CURL_MAX_WRITE_SIZE];
     size_t body_size, body_offset;
-    int header_ready, paused, receiving, done, error, connected, http2;
+    int header_ready, paused, receiving, done, error, connected;
     double connect_timeout, read_timeout, write_timeout;
     double started, last_read, last_write;
     curl_off_t downloaded, uploaded;
@@ -339,7 +339,6 @@ static size_t on_headers(char *data, size_t size, size_t count, void *context) {
         if (status >= 200) {
             long version = 0;
             curl_easy_getinfo(t->easy, CURLINFO_HTTP_VERSION, &version);
-            t->http2 = version == CURL_HTTP_VERSION_2_0;
             if (!t->pool->http1 && version != CURL_HTTP_VERSION_2_0) {
                 t->error = 6;
                 return 0;
@@ -356,9 +355,7 @@ static size_t on_headers(char *data, size_t size, size_t count, void *context) {
 static size_t on_body(char *data, size_t size, size_t count, void *context) {
     Transfer *t = context;
     size_t n = size * count;
-    /* Keep one bounded chunk while fetching headers. Pausing the first DATA
-       callback can prevent some HTTP/2 backends from reporting stream errors. */
-    if ((!t->receiving && !t->http2) || t->body_size != t->body_offset) {
+    if (!t->receiving || t->body_size != t->body_offset) {
         t->paused = 1;
         return CURL_WRITEFUNC_PAUSE;
     }

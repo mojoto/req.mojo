@@ -23,7 +23,7 @@ jobs:
   test:
     name: Test and build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 45 || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +58,32 @@ jobs:
 
       - name: Verify isolated package consumers
         run: make test-package
+
+      - name: Open temporary macOS SSH debug session
+        id: debug
+        if: always() && github.event_name == 'workflow_dispatch' && runner.os == 'macOS'
+        uses: owenthereal/action-upterm@175d33786004a53b1538bcf157402b7197ce5029 # v2
+        with:
+          limit-access-to-actor: true
+          detached: true
+          upterm-version: v0.36.0
+          wait-timeout-minutes: 20
+
+      - name: Save SSH connection details
+        if: always() && github.event_name == 'workflow_dispatch' && runner.os == 'macOS'
+        env:
+          SSH_COMMAND: ${{ steps.debug.outputs.ssh-command }}
+        run: |
+          mkdir -p build
+          printf '%s\n' "$SSH_COMMAND" > build/debug-ssh.txt
+
+      - name: Upload SSH connection details
+        if: always() && github.event_name == 'workflow_dispatch' && runner.os == 'macOS'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macos-debug-ssh
+          path: build/debug-ssh.txt
+          retention-days: 1
 
       - name: Upload test results
         if: always()
