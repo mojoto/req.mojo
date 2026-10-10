@@ -185,6 +185,7 @@ struct Response(Movable):
     var _consumed: Bool
     var _eof: Bool
     var _offset: Int
+    var _raw_mode: Bool
 
     def __init__(
         out self,
@@ -210,6 +211,7 @@ struct Response(Movable):
         self._consumed = False
         self._eof = False
         self._offset = 0
+        self._raw_mode = False
 
     @staticmethod
     def from_stream(
@@ -238,17 +240,6 @@ struct Response(Movable):
                     ErrorKind.ProtocolError, "Invalid response header"
                 )
             headers.add(String(pair[0]), String(String(pair[1]).strip()))
-        for value in headers.get_all("Content-Encoding"):
-            for encoding in value.split(","):
-                if String(encoding).strip().lower() not in [
-                    "identity",
-                    "gzip",
-                    "deflate",
-                ]:
-                    raise HTTPError(
-                        ErrorKind.DecodeError,
-                        "Unsupported response content encoding",
-                    )
         var response = Self(
             code,
             request=request,
@@ -275,6 +266,9 @@ struct Response(Movable):
             headers=headers,
             http_version=http_version,
         )
+        if request.method == "HEAD":
+            source.close()
+            return response^
         response._stream = source^
         response._cached = False
         return response^
@@ -345,6 +339,11 @@ struct Response(Movable):
             bytes.extend(Span(self._content)[self._offset : end])
             self._offset = end
             return bytes^
+        if self._raw_mode:
+            raise HTTPError(
+                ErrorKind.StreamConsumed,
+                "Raw response stream has been consumed",
+            )
         if self._eof:
             return None
         if self.is_closed():
@@ -355,10 +354,7 @@ struct Response(Movable):
             self._eof = True
         return result^
 
-    def text(
-        self, *, encoding: Optional[String] = None
-    ) raises HTTPError -> String:
-        self._require_content()
+    def _text_encoding(self, encoding: Optional[String]) -> String:
         var codec = String("utf-8")
         if encoding:
             codec = encoding.value().lower()
@@ -373,22 +369,39 @@ struct Response(Movable):
                         and String(parts[0]).strip().lower() == "charset"
                     ):
                         codec = String(parts[1]).strip().strip('"').lower()
-        if codec == "utf-8" or codec == "utf8":
-            return decode_utf8(self._content)
-        if codec in ["ascii", "us-ascii"]:
-            for byte in self._content:
-                if byte > 127:
-                    raise HTTPError(
-                        ErrorKind.DecodeError, "Invalid ASCII bytes"
-                    )
-            return decode_utf8(self._content)
-        if codec in ["iso-8859-1", "latin-1", "latin1"]:
-            var result = String()
-            for byte in self._content:
-                result += String(chr(Int(byte)))
-            return result^
-        raise HTTPError(
-            ErrorKind.DecodeError, "Unsupported response character encoding"
+        return codec^
+
+    def text(
+        self, *, encoding: Optional[String] = None
+    ) raises HTTPError -> String:
+        self._require_content()
+        return _decode_text(self._content, self._text_encoding(encoding))
+
+    def iter_bytes(
+        mut self, chunk_size: Int = 65536
+    ) raises HTTPError -> _ByteIterator[origin_of(self)]:
+        return _ByteIterator[origin_of(self)](Pointer(to=self), chunk_size)
+
+    def iter_raw(
+        mut self, chunk_size: Int = 65536
+    ) raises HTTPError -> _ByteIterator[origin_of(self)]:
+        return _ByteIterator[origin_of(self)](
+            Pointer(to=self), chunk_size, raw=True
+        )
+
+    def iter_text(
+        mut self, chunk_size: Int = 65536, *, encoding: Optional[String] = None
+    ) raises HTTPError -> _TextIterator[origin_of(self)]:
+        var codec = self._text_encoding(encoding)
+        return _TextIterator[origin_of(self)](
+            self.iter_bytes(), chunk_size, codec
+        )
+
+    def iter_lines(
+        mut self, *, encoding: Optional[String] = None
+    ) raises HTTPError -> _LineIterator[origin_of(self)]:
+        return _LineIterator[origin_of(self)](
+            self.iter_text(4096, encoding=encoding)
         )
 
     def json(self) raises HTTPError -> JSONValue:
@@ -463,6 +476,32 @@ struct ResponseContext[origin: Origin[mut=True]](Movable):
     ) raises HTTPError -> Optional[Bytes]:
         return self._response[].read_chunk(max_bytes)
 
+    def iter_bytes(
+        mut self, chunk_size: Int = 65536
+    ) raises HTTPError -> _ByteIterator[Self.origin]:
+        return _ByteIterator[Self.origin](self._response, chunk_size)
+
+    def iter_raw(
+        mut self, chunk_size: Int = 65536
+    ) raises HTTPError -> _ByteIterator[Self.origin]:
+        return _ByteIterator[Self.origin](self._response, chunk_size, raw=True)
+
+    def iter_text(
+        mut self, chunk_size: Int = 65536, *, encoding: Optional[String] = None
+    ) raises HTTPError -> _TextIterator[Self.origin]:
+        return _TextIterator[Self.origin](
+            self.iter_bytes(),
+            chunk_size,
+            self._response[]._text_encoding(encoding),
+        )
+
+    def iter_lines(
+        mut self, *, encoding: Optional[String] = None
+    ) raises HTTPError -> _LineIterator[Self.origin]:
+        return _LineIterator[Self.origin](
+            self.iter_text(4096, encoding=encoding)
+        )
+
     def text(
         self, *, encoding: Optional[String] = None
     ) raises HTTPError -> String:
@@ -485,3 +524,292 @@ struct ResponseContext[origin: Origin[mut=True]](Movable):
 
     def close(mut self):
         self._response[].close()
+
+
+def _decode_text(data: Bytes, codec: String) raises HTTPError -> String:
+    if codec == "utf-8" or codec == "utf8":
+        return decode_utf8(data)
+    if codec in ["ascii", "us-ascii"]:
+        for byte in data:
+            if byte > 127:
+                raise HTTPError(ErrorKind.DecodeError, "Invalid ASCII bytes")
+        return decode_utf8(data)
+    if codec in ["iso-8859-1", "latin-1", "latin1"]:
+        var result = String()
+        for byte in data:
+            result += String(chr(Int(byte)))
+        return result^
+    raise HTTPError(
+        ErrorKind.DecodeError, "Unsupported response character encoding"
+    )
+
+
+struct _ByteIterator[o: Origin[mut=True]](Movable):
+    var _response: Pointer[Response, Self.o]
+    var _size: Int
+    var _raw: Bool
+    var _started: Bool
+    var _done: Bool
+    var _offset: Int
+    var _ready: Optional[Bytes]
+
+    def __init__(
+        out self,
+        response: Pointer[Response, Self.o],
+        size: Int,
+        *,
+        raw: Bool = False,
+    ) raises HTTPError:
+        if size <= 0:
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "Chunk size must be positive"
+            )
+        self._response = response
+        self._size = size
+        self._raw = raw
+        self._started = False
+        self._done = False
+        self._offset = 0
+        self._ready = None
+
+    def __iter__(var self) -> Self:
+        return self^
+
+    def __has_next__(mut self) raises HTTPError -> Bool:
+        if not self._ready:
+            self._ready = self._read_next()
+        return Bool(self._ready)
+
+    def __next__(mut self) -> Bytes:
+        return self._ready.take()
+
+    def next_chunk(mut self) raises HTTPError -> Optional[Bytes]:
+        if self._ready:
+            return self._ready.take()
+        return self._read_next()
+
+    def _read_next(mut self) raises HTTPError -> Optional[Bytes]:
+        if self._done:
+            return None
+        if not self._started:
+            if self._response[]._consumed or (
+                self._raw and self._response[]._cached
+            ):
+                raise HTTPError(
+                    ErrorKind.StreamConsumed,
+                    "Response stream has already been consumed",
+                )
+            if not self._response[]._cached:
+                if self._response[].is_closed():
+                    raise HTTPError(
+                        ErrorKind.StreamClosed, "Response stream is closed"
+                    )
+                self._response[]._consumed = True
+                self._response[]._raw_mode = self._raw
+            self._started = True
+        var result = Bytes(capacity=self._size)
+        if self._response[]._cached:
+            var end = min(
+                self._offset + self._size, len(self._response[]._content)
+            )
+            result.extend(Span(self._response[]._content)[self._offset : end])
+            self._offset = end
+            self._done = end == len(self._response[]._content)
+        else:
+            try:
+                while len(result) < self._size:
+                    var chunk = (
+                        self._response[]
+                        ._stream.value()
+                        .read_chunk(self._size - len(result), raw=self._raw)
+                    )
+                    if not chunk:
+                        self._response[]._eof = True
+                        self._done = True
+                        break
+                    result.extend(Span(chunk.value()))
+            except error:
+                self._response[].close()
+                error.method = self._response[].request.method
+                error.url = String(self._response[].url)
+                raise error
+        if not result:
+            return None
+        return result^
+
+
+def _utf8_prefix(data: Bytes, final: Bool) raises HTTPError -> Int:
+    var offset = 0
+    while offset < len(data):
+        var lead = Int(data[offset])
+        var width = 1 if lead < 128 else (
+            2 if 194
+            <= lead
+            <= 223 else (
+                3 if 224 <= lead <= 239 else (4 if 240 <= lead <= 244 else 0)
+            )
+        )
+        if width == 0 or (final and offset + width > len(data)):
+            raise HTTPError(ErrorKind.DecodeError, "Invalid UTF-8 bytes")
+        if offset + width > len(data):
+            break
+        offset += width
+    return offset
+
+
+struct _TextIterator[o: Origin[mut=True]](Movable):
+    var _bytes: _ByteIterator[Self.o]
+    var _size: Int
+    var _codec: String
+    var _pending: Bytes
+    var _text: String
+    var _done: Bool
+    var _ready: Optional[String]
+
+    def __init__(
+        out self, var bytes: _ByteIterator[Self.o], size: Int, codec: String
+    ) raises HTTPError:
+        if size <= 0:
+            raise HTTPError(
+                ErrorKind.InvalidRequest, "Chunk size must be positive"
+            )
+        if codec not in [
+            "utf-8",
+            "utf8",
+            "ascii",
+            "us-ascii",
+            "iso-8859-1",
+            "latin-1",
+            "latin1",
+        ]:
+            raise HTTPError(
+                ErrorKind.DecodeError, "Unsupported text encoding: " + codec
+            )
+        self._bytes = bytes^
+        self._size = size
+        self._codec = codec
+        self._pending = Bytes()
+        self._text = String()
+        self._done = False
+        self._ready = None
+
+    def __iter__(var self) -> Self:
+        return self^
+
+    def __has_next__(mut self) raises HTTPError -> Bool:
+        if not self._ready:
+            self._ready = self.next_chunk()
+        return Bool(self._ready)
+
+    def __next__(mut self) -> String:
+        return self._ready.take()
+
+    def next_chunk(mut self) raises HTTPError -> Optional[String]:
+        if self._ready:
+            return self._ready.take()
+        try:
+            while not self._done and len(self._text.codepoints()) < self._size:
+                var chunk = self._bytes.next_chunk()
+                self._done = not Bool(chunk)
+                if chunk:
+                    self._pending.extend(Span(chunk.value()))
+                var end = _utf8_prefix(
+                    self._pending, self._done
+                ) if self._codec in ["utf-8", "utf8"] else len(self._pending)
+                var complete = Bytes()
+                complete.extend(Span(self._pending)[:end])
+                self._text += _decode_text(complete, self._codec)
+                var remainder = Bytes()
+                remainder.extend(Span(self._pending)[end:])
+                self._pending = remainder^
+            if not self._text:
+                return None
+            var result = String()
+            var count = 0
+            for character in self._text.codepoints():
+                if count == self._size:
+                    break
+                result += String(character)
+                count += 1
+            var remaining = Bytes()
+            remaining.extend(self._text.as_bytes()[result.byte_length() :])
+            var remainder = decode_utf8(remaining)
+            self._text = remainder^
+            return result^
+        except error:
+            self._bytes._response[].close()
+            error.method = self._bytes._response[].request.method
+            error.url = String(self._bytes._response[].url)
+            raise error
+
+
+struct _LineIterator[o: Origin[mut=True]](Movable):
+    var _text: _TextIterator[Self.o]
+    var _lines: List[String]
+    var _index: Int
+    var _line: String
+    var _skip_lf: Bool
+    var _done: Bool
+    var _ready: Optional[String]
+
+    def __init__(out self, var text: _TextIterator[Self.o]):
+        self._text = text^
+        self._lines = List[String]()
+        self._index = 0
+        self._line = String()
+        self._skip_lf = False
+        self._done = False
+        self._ready = None
+
+    def __iter__(var self) -> Self:
+        return self^
+
+    def __has_next__(mut self) raises HTTPError -> Bool:
+        if not self._ready:
+            self._ready = self.next_chunk()
+        return Bool(self._ready)
+
+    def __next__(mut self) -> String:
+        return self._ready.take()
+
+    def next_chunk(mut self) raises HTTPError -> Optional[String]:
+        if self._ready:
+            return self._ready.take()
+        while self._index == len(self._lines) and not self._done:
+            self._lines.clear()
+            self._index = 0
+            var chunk = self._text.next_chunk()
+            if not chunk:
+                self._done = True
+                if self._line:
+                    self._lines.append(self._line)
+                    self._line = String()
+                break
+            for character in chunk.value().codepoints():
+                var char = String(character)
+                if self._skip_lf:
+                    self._skip_lf = False
+                    if char == "\n":
+                        continue
+                if char in [
+                    "\r",
+                    "\n",
+                    "\v",
+                    "\f",
+                    "\x1c",
+                    "\x1d",
+                    "\x1e",
+                    "\u0085",
+                    "\u2028",
+                    "\u2029",
+                ]:
+                    self._lines.append(self._line)
+                    self._line = String()
+                    self._skip_lf = char == "\r"
+                else:
+                    self._line += char
+        if self._index == len(self._lines):
+            return None
+        var result = self._lines[self._index]
+        self._index += 1
+        return result^

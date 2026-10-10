@@ -38,6 +38,10 @@ def main() raises:
     var hooked_response = hooked.get("http://offline.test")
     assert_equal(hooked_response.request.headers["X-Package-Hook"], "yes")
     assert_equal(hooked_response.headers["X-Package-Hook"], "yes")
+    var chunks = String()
+    for chunk in hooked_response.iter_text(2):
+        chunks += chunk
+    assert_equal(chunks, "offline")
     hooked.close()
     if getenv("REQ_EXPECT_HTTP2_UNAVAILABLE"):
         try:
@@ -105,4 +109,10 @@ def main() raises:
     var streamed = surviving_response(url + "/chunked")
     _ = streamed.read()
     assert_equal(streamed.text(), "hello world")
+    var raw_response = req.stream("GET", url + "/encoded?kind=gzip")
+    var raw = req.Bytes()
+    for chunk in raw_response.iter_raw(7):
+        raw.extend(Span(chunk))
+    assert_equal(Int(raw[0]), 31)
+    assert_equal(Int(raw[1]), 139)
     print("Req package HTTP/2, JSON, upload, proxy, and streaming tests passed")
