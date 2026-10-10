@@ -1,14 +1,7 @@
-from std.testing import assert_equal, assert_true, assert_raises
+"""Streaming tests."""
+from req import Bytes, Client, ErrorKind, Headers, encode_utf8, stream
 from std.os import getenv
-from req import (
-    Client,
-    Bytes,
-    ErrorKind,
-    HTTPError,
-    Headers,
-    encode_utf8,
-    stream,
-)
+from std.testing import assert_equal, assert_raises, assert_true
 
 
 def test_stream_states() raises:
@@ -189,4 +182,156 @@ def test_buffered_binary_chunks_and_copy_isolation() raises:
         assert_true(not response.read_chunk())
 
 
-comptime TEST_FUNCTIONS = __functions_in_module()
+def test_closed_implicit() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    assert_true(not client.is_closed())
+    _ = client.get("/echo")
+    client.close()
+    assert_true(client.is_closed())
+    client.close()
+    with assert_raises():
+        _ = client.get("/echo")
+    with assert_raises():
+        _ = client.context()
+
+
+def test_closed_context() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    assert_true(not client.is_closed())
+    with client.context() as scoped:
+        _ = scoped.get("/echo")
+    assert_true(client.is_closed())
+    client.close()
+    with assert_raises():
+        _ = client.get("/echo")
+    with assert_raises():
+        _ = client.context()
+
+
+def test_stream_single_byte_chunks() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/chunked")
+    var content = Bytes()
+    while True:
+        var chunk = response.read_chunk(1)
+        if not chunk:
+            break
+        assert_true(0 < len(chunk.value()) <= 1)
+        for byte in chunk.value():
+            content.append(byte)
+    assert_equal(content, encode_utf8("hello world"))
+    assert_true(response.is_closed())
+    assert_true(not response.read_chunk())
+
+
+def test_stream_small_chunks() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/chunked")
+    var content = Bytes()
+    while True:
+        var chunk = response.read_chunk(3)
+        if not chunk:
+            break
+        assert_true(0 < len(chunk.value()) <= 3)
+        for byte in chunk.value():
+            content.append(byte)
+    assert_equal(content, encode_utf8("hello world"))
+    assert_true(response.is_closed())
+    assert_true(not response.read_chunk())
+
+
+def test_stream_prime_sized_chunks() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/chunked")
+    var content = Bytes()
+    while True:
+        var chunk = response.read_chunk(13)
+        if not chunk:
+            break
+        assert_true(0 < len(chunk.value()) <= 13)
+        for byte in chunk.value():
+            content.append(byte)
+    assert_equal(content, encode_utf8("hello world"))
+    assert_true(response.is_closed())
+    assert_true(not response.read_chunk())
+
+
+def test_stream_block_sized_chunks() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/chunked")
+    var content = Bytes()
+    while True:
+        var chunk = response.read_chunk(64)
+        if not chunk:
+            break
+        assert_true(0 < len(chunk.value()) <= 64)
+        for byte in chunk.value():
+            content.append(byte)
+    assert_equal(content, encode_utf8("hello world"))
+    assert_true(response.is_closed())
+    assert_true(not response.read_chunk())
+
+
+def test_stream_unread() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/chunked")
+    var caught = False
+    try:
+        _ = response.content()
+    except error:
+        assert_equal(error.kind, ErrorKind.StreamNotRead)
+        caught = True
+    assert_true(caught)
+    _ = response.read()
+    assert_equal(response.text(), "hello world")
+
+
+def test_stream_consumed() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/chunked")
+    _ = response.read_chunk(1)
+    var caught = False
+    try:
+        _ = response.read()
+    except error:
+        assert_equal(error.kind, ErrorKind.StreamConsumed)
+        caught = True
+    assert_true(caught)
+
+
+def test_stream_closed() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/chunked")
+    response.close()
+    var caught = False
+    try:
+        _ = response.read()
+    except error:
+        assert_equal(error.kind, ErrorKind.StreamClosed)
+        caught = True
+    assert_true(caught)
+
+
+def test_stream_bad_chunk_size() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/chunked")
+    for size in [0, -1]:
+        with assert_raises():
+            _ = response.read_chunk(size)
+    assert_equal(response.read(), encode_utf8("hello world"))
+
+
+def test_stream_failure_context() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.stream("GET", "/truncated")
+    var caught = False
+    try:
+        _ = response.read()
+    except error:
+        assert_equal(error.kind, ErrorKind.ReadError)
+        assert_equal(error.method.value(), "GET")
+        assert_equal(error.url.value(), getenv("REQ_TEST_URL") + "/truncated")
+        caught = True
+    assert_true(caught)
+    assert_true(response.is_closed())
+    assert_equal(client.get("/echo").status_code, 200)

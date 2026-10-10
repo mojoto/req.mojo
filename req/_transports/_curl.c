@@ -173,6 +173,13 @@ int64_t req_body_length(void *handle) {
     return body->known_length ? (int64_t)body->size : -1;
 }
 
+int req_http2_supported(void) {
+    const curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
+    if (!info || !(info->features & CURL_VERSION_HTTP2)) return 0;
+    /* Older libcurl offers HTTP/1.1 even in TLS prior-knowledge mode. */
+    return info->version_num >= 0x080a00 ? 2 : 1;
+}
+
 int req_proxy_validate(const char *proxy) {
     CURLU *url = curl_url();
     if (!url) return 2;
@@ -195,6 +202,7 @@ typedef struct {
     Transfer *head;
     size_t refs;
     int closed;
+    int http1, http2;
     size_t max_connections, max_keepalive;
     double keepalive_expiry, last_activity;
 } Pool;
@@ -204,12 +212,13 @@ struct Transfer {
     Transfer *next;
     CURL *easy;
     struct curl_slist *request_headers;
+    struct curl_slist *connection_key;
     unsigned char *upload;
     size_t upload_size;
     UploadBody *upload_body;
     UploadPart *upload_part;
     size_t upload_offset;
-    int body_started, admitted;
+    int body_started, upload_eof, admitted, multiplex_wait;
     double pool_timeout;
     char *headers;
     size_t header_size, header_capacity;
@@ -242,7 +251,8 @@ static void finish(Transfer *t, int error) {
     t->done = 1;
     t->pool->last_activity = now_seconds();
     if (t->easy) {
-        if (error >= 0) curl_easy_setopt(t->easy, CURLOPT_FORBID_REUSE, 1L);
+        /* libcurl cancels individual HTTP/2 streams and retires broken
+           connections itself. FORBID_REUSE would discard healthy peers. */
         curl_multi_remove_handle(t->pool->multi, t->easy);
         curl_easy_cleanup(t->easy);
         t->easy = NULL;
@@ -327,6 +337,12 @@ static size_t on_headers(char *data, size_t size, size_t count, void *context) {
         long status = 0;
         curl_easy_getinfo(t->easy, CURLINFO_RESPONSE_CODE, &status);
         if (status >= 200) {
+            long version = 0;
+            curl_easy_getinfo(t->easy, CURLINFO_HTTP_VERSION, &version);
+            if (!t->pool->http1 && version != CURL_HTTP_VERSION_2_0) {
+                t->error = 6;
+                return 0;
+            }
             t->header_ready = 1;
             t->error = configure_decoders(t);
             if (t->error >= 0) return 0;
@@ -353,6 +369,19 @@ static size_t on_body(char *data, size_t size, size_t count, void *context) {
 
 static size_t on_upload(char *buffer, size_t size, size_t count, void *context) {
     Transfer *t = context;
+    if (t->upload_eof) {
+        /* A callback after EOF starts a new attempt. Older libcurl may omit
+           the seek callback for unknown-length HTTP/2 uploads. */
+        if (body_consumed(t->upload_body)) {
+            t->error = 18;
+            return CURL_READFUNC_ABORT;
+        }
+        t->upload_part = t->upload_body->head;
+        t->upload_offset = 0;
+        t->upload_eof = 0;
+        t->uploaded = 0;
+        t->last_write = t->last_read = now_seconds();
+    }
     if (!t->body_started) {
         if (body_consumed(t->upload_body)) { t->error = 18; return CURL_READFUNC_ABORT; }
         consume_body(t->upload_body);
@@ -379,21 +408,82 @@ static size_t on_upload(char *buffer, size_t size, size_t count, void *context) 
             t->upload_offset = 0;
         }
     }
+    t->upload_eof = filled == 0;
     return filled;
 }
 
-static size_t active_transfers(Pool *p) {
+static int on_seek(void *context, curl_off_t offset, int origin) {
+    Transfer *t = context;
+    if (origin != SEEK_SET || offset != 0) return CURL_SEEKFUNC_CANTSEEK;
+    if (t->body_started && body_consumed(t->upload_body)) {
+        t->error = 18;
+        return CURL_SEEKFUNC_FAIL;
+    }
+    t->upload_part = t->upload_body->head;
+    t->upload_offset = 0;
+    t->upload_eof = 0;
+    t->uploaded = 0;
+    t->last_write = t->last_read = now_seconds();
+    return CURL_SEEKFUNC_OK;
+}
+
+static int same_connection(Transfer *a, Transfer *b) {
+#if LIBCURL_VERSION_NUM >= 0x080200
+    curl_off_t first = -1, second = -1;
+    if (curl_easy_getinfo(a->easy, CURLINFO_CONN_ID, &first) == CURLE_OK &&
+        curl_easy_getinfo(b->easy, CURLINFO_CONN_ID, &second) == CURLE_OK &&
+        first >= 0 && second >= 0) return first == second;
+#endif
+    /* Older libcurl exposes the TCP endpoints during active transfers.
+       ACTIVESOCKET is only available after a transfer completes. */
+    long local_a = 0, local_b = 0, remote_a = 0, remote_b = 0;
+    char *ip_a = NULL, *ip_b = NULL;
+    curl_easy_getinfo(a->easy, CURLINFO_LOCAL_PORT, &local_a);
+    curl_easy_getinfo(b->easy, CURLINFO_LOCAL_PORT, &local_b);
+    curl_easy_getinfo(a->easy, CURLINFO_PRIMARY_PORT, &remote_a);
+    curl_easy_getinfo(b->easy, CURLINFO_PRIMARY_PORT, &remote_b);
+    curl_easy_getinfo(a->easy, CURLINFO_PRIMARY_IP, &ip_a);
+    curl_easy_getinfo(b->easy, CURLINFO_PRIMARY_IP, &ip_b);
+    return local_a && local_a == local_b && remote_a == remote_b &&
+           ip_a && ip_b && !strcmp(ip_a, ip_b);
+}
+
+static size_t active_connections(Pool *p) {
     size_t count = 0;
-    for (Transfer *t = p->head; t; t = t->next)
-        if (!t->done && t->admitted) count++;
+    for (Transfer *t = p->head; t; t = t->next) {
+        if (t->done || !t->admitted) continue;
+        int seen = 0;
+        if (p->http2) {
+            for (Transfer *other = p->head; other != t; other = other->next) {
+                if (other->done || !other->admitted) continue;
+                if (same_connection(other, t)) { seen = 1; break; }
+            }
+        }
+        if (!seen) count++;
+    }
     return count;
 }
 
+static int can_multiplex(Transfer *t) {
+    if (!t->pool->http2 || !t->connection_key) return 0;
+    for (Transfer *other = t->pool->head; other; other = other->next) {
+        if (other == t || other->done || !other->admitted || !other->header_ready) continue;
+        long version = 0;
+        curl_easy_getinfo(other->easy, CURLINFO_HTTP_VERSION, &version);
+        if (version != CURL_HTTP_VERSION_2_0) continue;
+        struct curl_slist *a = t->connection_key, *b = other->connection_key;
+        while (a && b && !strcmp(a->data, b->data)) { a = a->next; b = b->next; }
+        if (!a && !b) return 1;
+    }
+    return 0;
+}
+
 static void admit_transfers(Pool *p) {
-    size_t active = active_transfers(p);
+    size_t active = active_connections(p);
     for (Transfer *t = p->head; t; t = t->next) {
         if (t->done || t->admitted) continue;
-        if (p->max_connections && active >= p->max_connections) {
+        int multiplex = can_multiplex(t);
+        if (p->max_connections && active >= p->max_connections && !multiplex) {
             if (t->pool_timeout > 0 && now_seconds() - t->started >= t->pool_timeout)
                 finish(t, 19);
             continue;
@@ -406,12 +496,18 @@ static void admit_transfers(Pool *p) {
         }
         if (curl_multi_setopt(p->multi, CURLMOPT_MAXCONNECTS,
                 (long)(p->max_keepalive ? p->max_keepalive : 1)) != CURLM_OK ||
+            curl_multi_setopt(p->multi, CURLMOPT_MAX_TOTAL_CONNECTIONS,
+                (long)p->max_connections) != CURLM_OK ||
+            curl_multi_setopt(p->multi, CURLMOPT_PIPELINING,
+                p->http2 ? CURLPIPE_MULTIPLEX : CURLPIPE_NOTHING) != CURLM_OK ||
             curl_multi_add_handle(p->multi, t->easy) != CURLM_OK) {
             finish(t, 6); continue;
         }
         t->admitted = 1;
+        t->multiplex_wait = multiplex;
+        if (multiplex) curl_easy_setopt(t->easy, CURLOPT_CONNECTTIMEOUT_MS, LONG_MAX);
         t->started = t->last_read = t->last_write = now_seconds();
-        active++;
+        if (!multiplex) active++;
     }
 }
 
@@ -450,9 +546,12 @@ static void pump(Pool *p) {
         curl_easy_getinfo(t->easy, CURLINFO_PRETRANSFER_TIME, &pretransfer);
         if (!t->connected && pretransfer > 0) {
             t->connected = 1;
+            t->multiplex_wait = 0;
             t->last_read = t->last_write = now;
         }
-        if (!t->connected) {
+        if (t->multiplex_wait) {
+            if (t->pool_timeout > 0 && now - t->started >= t->pool_timeout) finish(t, 19);
+        } else if (!t->connected) {
             if (t->connect_timeout > 0 && now - t->started >= t->connect_timeout) finish(t, 7);
         } else if ((uint64_t)t->uploaded < t->upload_size) {
             if (t->write_timeout > 0 && now - t->last_write >= t->write_timeout) finish(t, 9);
@@ -462,7 +561,10 @@ static void pump(Pool *p) {
     }
 }
 
-void *req_pool_new(size_t max_connections, size_t max_keepalive, double keepalive_expiry) {
+void *req_pool_new(size_t max_connections, size_t max_keepalive, double keepalive_expiry,
+                   int http1, int http2) {
+    if ((!http1 && !http2) || (http2 && !req_http2_supported()) ||
+        (!http1 && req_http2_supported() < 2)) return NULL;
     static int initialized;
     if (!initialized) {
         if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) return NULL;
@@ -474,6 +576,8 @@ void *req_pool_new(size_t max_connections, size_t max_keepalive, double keepaliv
     p->multi = curl_multi_init();
     if (!p->multi) { free(p); return NULL; }
     p->refs = 1;
+    p->http1 = http1;
+    p->http2 = http2;
     p->max_connections = max_connections;
     p->max_keepalive = max_connections && max_keepalive > max_connections ? max_connections : max_keepalive;
     p->keepalive_expiry = keepalive_expiry;
@@ -517,7 +621,11 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
 #define SET(option, value) do { if (curl_easy_setopt(t->easy, option, value) != CURLE_OK) { finish(t, 6); return t; } } while (0)
     SET(CURLOPT_URL, url);
     SET(CURLOPT_CUSTOMREQUEST, method);
-    SET(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    SET(CURLOPT_HTTP_VERSION, (long)(p->http2 ?
+        (p->http1 ? CURL_HTTP_VERSION_2TLS : CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE) :
+        CURL_HTTP_VERSION_1_1));
+    SET(CURLOPT_PIPEWAIT, p->http2 ? 1L : 0L);
+    if (p->http2) SET(CURLOPT_SSLVERSION, (long)CURL_SSLVERSION_TLSv1_2);
     SET(CURLOPT_PROTOCOLS_STR, "http,https");
     SET(CURLOPT_FOLLOWLOCATION, 0L);
     SET(CURLOPT_PATH_AS_IS, 1L);
@@ -551,6 +659,27 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     SET(CURLOPT_XFERINFOFUNCTION, on_progress);
     SET(CURLOPT_XFERINFODATA, t);
     SET(CURLOPT_PRIVATE, t);
+    if (p->http2) {
+        CURLU *parsed = curl_url();
+        char *scheme = NULL, *host = NULL, *port = NULL;
+        if (!parsed || curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK ||
+            curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) != CURLUE_OK ||
+            curl_url_get(parsed, CURLUPART_HOST, &host, 0) != CURLUE_OK ||
+            curl_url_get(parsed, CURLUPART_PORT, &port, CURLU_DEFAULT_PORT) != CURLUE_OK) {
+            curl_free(scheme); curl_free(host); curl_free(port); curl_url_cleanup(parsed);
+            finish(t, 6); return t;
+        }
+        const char *keys[] = {scheme, host, port, proxy, no_proxy, verify ? "1" : "0",
+                              ca_file ? ca_file : "", ca_path ? ca_path : ""};
+        int failed = 0;
+        for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+            struct curl_slist *next = curl_slist_append(t->connection_key, keys[i]);
+            if (!next) { failed = 1; break; }
+            t->connection_key = next;
+        }
+        curl_free(scheme); curl_free(host); curl_free(port); curl_url_cleanup(parsed);
+        if (failed) { finish(t, 4); return t; }
+    }
     char *copy = strdup(headers);
     if (!copy) { finish(t, 4); return t; }
     char *save = NULL;
@@ -569,6 +698,8 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
         SET(CURLOPT_UPLOAD, 1L);
         SET(CURLOPT_READFUNCTION, on_upload);
         SET(CURLOPT_READDATA, t);
+        SET(CURLOPT_SEEKFUNCTION, on_seek);
+        SET(CURLOPT_SEEKDATA, t);
         SET(CURLOPT_INFILESIZE_LARGE, (curl_off_t)req_body_length(upload_body));
         SET(CURLOPT_CUSTOMREQUEST, method);
     } else if (has_body) {
@@ -740,6 +871,7 @@ void req_transfer_free(void *handle) {
     while (*link && *link != t) link = &(*link)->next;
     if (*link) *link = t->next;
     curl_slist_free_all(t->request_headers);
+    curl_slist_free_all(t->connection_key);
     for (int i = 0; i < t->decoder_count; i++) {
         if (t->decoders[i].initialized) inflateEnd(&t->decoders[i].stream);
         clear_probe(&t->decoders[i]);

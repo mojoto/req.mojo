@@ -1,6 +1,24 @@
-from std.testing import assert_equal, assert_true
+"""Timeouts tests."""
+from req import Bytes, Client, ErrorKind, Timeout
 from std.os import getenv
-from req import Client, Timeout, ErrorKind, encode_utf8, Bytes
+from std.testing import assert_equal, assert_true
+
+
+def test_send_timeout_override() raises:
+    var client = Client(
+        base_url=getenv("REQ_TEST_URL"),
+        timeout=Timeout(connect=1.0, read=0.05, write=1.0),
+    )
+    var request = client.build_request("GET", "/slow-body")
+    var response = client.send(request, timeout=Timeout.disabled())
+    assert_equal(response.text(), "partrest")
+    var caught = False
+    try:
+        _ = client.send(request)
+    except error:
+        assert_equal(error.kind, ErrorKind.ReadTimeout)
+        caught = True
+    assert_true(caught)
 
 
 def test_read_timeouts() raises:
@@ -43,6 +61,3 @@ def test_connect_and_write_timeouts() raises:
         assert_equal(error.kind, ErrorKind.WriteTimeout)
         caught = True
     assert_true(caught)
-
-
-comptime TEST_FUNCTIONS = __functions_in_module()

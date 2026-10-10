@@ -1,4 +1,4 @@
-"""Discover and run native Mojo tests, including adapted HTTPX scenarios."""
+"""Discover and run native Mojo tests."""
 
 import json
 import os

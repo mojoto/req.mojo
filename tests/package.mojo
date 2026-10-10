@@ -11,6 +11,14 @@ def surviving_response(url: String) raises -> req.Response:
 
 
 def main() raises:
+    if getenv("REQ_EXPECT_HTTP2_UNAVAILABLE"):
+        try:
+            _ = req.Client(http2=True)
+        except error:
+            assert_equal(error.kind, req.ErrorKind.InvalidRequest)
+            assert_true("HTTP/2 support" in error.message)
+            return
+        raise Error("Expected an unavailable HTTP/2 backend error")
     if getenv("REQ_EXPECT_LOAD_ERROR"):
         try:
             var client = req.Client()
@@ -59,8 +67,14 @@ def main() raises:
     )
     configured.close()
 
+    var http2 = req.Client(http2=True, ca_file=getenv("REQ_TEST_CA_FILE"))
+    var negotiated = http2.get(getenv("REQ_TEST_HTTP2_URL") + "/echo")
+    assert_equal(negotiated.http_version, "HTTP/2")
+    assert_equal(negotiated.status_code, 200)
+    http2.close()
+
     # The response retains its pool even after the local Client is destroyed.
     var streamed = surviving_response(url + "/chunked")
     _ = streamed.read()
     assert_equal(streamed.text(), "hello world")
-    print("Req package HTTP, JSON, upload, proxy, and streaming tests passed")
+    print("Req package HTTP/2, JSON, upload, proxy, and streaming tests passed")

@@ -10,8 +10,10 @@ from .._utils import decode_utf8
 from ._library import NativePool, Pool
 
 
-def new_pool(limits: Limits = Limits()) raises HTTPError -> Pool:
-    return ArcPointer(NativePool(limits))
+def new_pool(
+    limits: Limits = Limits(), *, http1: Bool = True, http2: Bool = False
+) raises HTTPError -> Pool:
+    return ArcPointer(NativePool(limits, http1=http1, http2=http2))
 
 
 def close_pool(handle: Pool):

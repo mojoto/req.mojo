@@ -1,13 +1,14 @@
-from std.testing import assert_equal, assert_true
-from std.os import getenv
+"""Transport tests."""
+from req import Bytes, ErrorKind, Timeout
 from req._transports.default import (
     CurlStream,
-    new_pool,
     close_pool,
+    new_pool,
     release_pool,
 )
-from req import Timeout, Bytes, ErrorKind
 from req._utils import decode_utf8
+from std.os import getenv
+from std.testing import assert_equal, assert_true
 
 
 def test_native_transport() raises:
@@ -84,6 +85,3 @@ def test_native_read_into_reuses_initialized_buffer() raises:
         rejected_closed = error.kind == ErrorKind.StreamClosed
     assert_true(rejected_empty and rejected_closed and valid_counts and closed)
     assert_equal(decode_utf8(collected), "hello world")
-
-
-comptime TEST_FUNCTIONS = __functions_in_module()

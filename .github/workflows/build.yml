@@ -56,6 +56,9 @@ jobs:
           pixi-version: v0.78.0
           locked: true
 
+      - name: Install test dependencies
+        run: make test-deps
+
       - name: Determine package version
         id: package
         shell: bash

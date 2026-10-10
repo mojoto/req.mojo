@@ -1,6 +1,7 @@
-from std.testing import assert_equal, assert_true, assert_raises
+"""JSON tests."""
 from req import JSONValue
 from std.math import inf, nan
+from std.testing import assert_equal, assert_raises, assert_true
 
 
 def test_json_parse() raises:
@@ -47,6 +48,3 @@ def test_number_conversion() raises:
         9223372036854775808.0,
     )
     assert_equal(JSONValue(Float64(1.5)).float_value(), 1.5)
-
-
-comptime TEST_FUNCTIONS = __functions_in_module()

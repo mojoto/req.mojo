@@ -86,9 +86,35 @@ struct NativePool(Movable):
     var free: def(Int) thin abi("C") -> NoneType
     var proxy_validate: def(Int) thin abi("C") -> c_int
 
-    def __init__(out self, limits: Limits = Limits()) raises HTTPError:
+    def __init__(
+        out self,
+        limits: Limits = Limits(),
+        *,
+        http1: Bool = True,
+        http2: Bool = False,
+    ) raises HTTPError:
         limits.validate()
+        if not http1 and not http2:
+            raise HTTPError(
+                ErrorKind.InvalidRequest,
+                "At least one HTTP protocol must be enabled",
+            )
         self.library = _load_library()
+        if http2:
+            var supported = _symbol[def() thin abi("C") -> c_int](
+                self.library, "req_http2_supported"
+            )
+            var capability = supported()
+            if not capability:
+                raise HTTPError(
+                    ErrorKind.InvalidRequest,
+                    "HTTP/2 requires libcurl built with HTTP/2 support",
+                )
+            if not http1 and capability < 2:
+                raise HTTPError(
+                    ErrorKind.InvalidRequest,
+                    "HTTP/2-only mode requires libcurl 8.10 or later",
+                )
         self.close = _symbol[type_of(self.close)](
             self.library, "req_pool_close"
         )
@@ -116,13 +142,15 @@ struct NativePool(Movable):
         self.proxy_validate = _symbol[type_of(self.proxy_validate)](
             self.library, "req_proxy_validate"
         )
-        var create = _symbol[def(Int, Int, Float64) thin abi("C") -> Int](
-            self.library, "req_pool_new"
-        )
+        var create = _symbol[
+            def(Int, Int, Float64, c_int, c_int) thin abi("C") -> Int
+        ](self.library, "req_pool_new")
         self.handle = create(
             limits.max_connections.value() if limits.max_connections else 0,
             limits.max_keepalive_connections,
             limits.keepalive_expiry.value() if limits.keepalive_expiry else -1.0,
+            c_int(http1),
+            c_int(http2),
         )
         if not self.handle:
             raise HTTPError(

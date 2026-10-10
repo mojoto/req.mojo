@@ -17,6 +17,7 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+from transports.http2_server import HTTP2Handler
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -284,10 +285,22 @@ class Fixtures:
         self.servers = [Server(("127.0.0.1", 0), Handler) for _ in range(3)]
         self.servers.append(Server(("127.0.0.1", 0), ProxyHandler))
         self.servers.append(Server(("127.0.0.1", 0), ProxyHandler))
+        for max_streams in (100, 1):
+            server = Server(("127.0.0.1", 0), HTTP2Handler)
+            server.max_streams = max_streams
+            server.fault_lock = threading.Lock()
+            server.refused_tokens = set()
+            server.http1_handler = Handler
+            self.servers.append(server)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(cert, key)
         self.servers[2].socket = context.wrap_socket(self.servers[2].socket, server_side=True)
         self.servers[4].socket = context.wrap_socket(self.servers[4].socket, server_side=True)
+        h2_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        h2_context.load_cert_chain(cert, key)
+        h2_context.set_alpn_protocols(["h2", "http/1.1"])
+        for server in self.servers[5:]:
+            server.socket = h2_context.wrap_socket(server.socket, server_side=True)
         self.blackhole = socket.socket()
         self.blackhole.bind(("127.0.0.1", 0))
         self.blackhole.listen()
@@ -322,6 +335,8 @@ class Fixtures:
             "REQ_TEST_URL": f"http://127.0.0.1:{self.servers[0].server_port}",
             "REQ_TEST_OTHER_URL": f"http://127.0.0.1:{self.servers[1].server_port}",
             "REQ_TEST_TLS_URL": f"https://localhost:{self.servers[2].server_port}",
+            "REQ_TEST_HTTP2_URL": f"https://localhost:{self.servers[5].server_port}",
+            "REQ_TEST_HTTP2_LIMITED_URL": f"https://localhost:{self.servers[6].server_port}",
             "REQ_TEST_BLACKHOLE_URL": f"https://127.0.0.1:{self.blackhole.getsockname()[1]}",
             "REQ_TEST_CA_FILE": str(cert),
             "REQ_TEST_UPLOAD_FILE": str(upload),

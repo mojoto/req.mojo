@@ -7,7 +7,7 @@ NATIVE_FLAGS := $(if $(filter Darwin,$(shell uname -s)),-dynamiclib,-shared)
 
 DOCS_DIR := website
 
-.PHONY: install native test test-package build format clean doc-install doc-start doc-build doc-serve doc-clean
+.PHONY: install native test-deps test test-package build format clean doc-install doc-start doc-build doc-serve doc-clean
 
 install:
 	pixi install
@@ -18,6 +18,10 @@ native: build/libreq_curl.$(NATIVE_EXT)
 build/libreq_curl.$(NATIVE_EXT): req/_transports/_curl.c
 	mkdir -p build
 	$(CC) $(CFLAGS) -fPIC $(NATIVE_FLAGS) $< -lcurl -lz -o $@
+
+test-deps:
+	$(PYTHON) -m ensurepip
+	$(PYTHON) -m pip install -r tests/requirements.txt
 
 test: native
 	REQ_MOJO="$(MOJO)" REQ_MOJO_FLAGS="$(MOJO_FLAGS)" $(PYTHON) tests/run_tests.py $(TEST_ARGS)

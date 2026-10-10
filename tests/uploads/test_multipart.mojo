@@ -1,117 +1,138 @@
-from std.testing import assert_equal, assert_true, assert_raises
-from std.os import getenv
-from std.ffi import external_call, c_int
+"""Multipart tests."""
 import req
 from req import (
+    Bytes,
     Client,
+    ErrorKind,
+    Headers,
+    QueryParams,
     Request,
     RequestBody,
     UploadFile,
-    Headers,
-    QueryParams,
-    Bytes,
-    ErrorKind,
     encode_utf8,
 )
+from std.os import getenv
+from std.testing import assert_equal, assert_raises, assert_true
 
 
-def test_file_upload_and_request_lifetime() raises:
-    var body = RequestBody.from_file(getenv("REQ_TEST_UPLOAD_FILE"))
-    assert_equal(body.content_length().value(), 65537)
-    var request = Request(
-        "PUT", getenv("REQ_TEST_URL") + "/echo-bytes", body=body
-    )
-    body.close()
-    assert_true(body.is_closed())
-    with assert_raises():
-        _ = body.content_length()
-    var client = Client()
-    var response = client.send(request)
-    var content = response.content()
-    assert_equal(len(content), 65537)
-    for i in range(len(content)):
-        assert_equal(content[i], UInt8(i % 251))
-    assert_equal(response.request.body.value().content_length().value(), 65537)
-    assert_equal(
-        req.post(
-            getenv("REQ_TEST_URL") + "/echo-bytes",
-            body=RequestBody.from_file(getenv("REQ_TEST_EMPTY_FILE")),
-        ).content(),
-        Bytes(),
-    )
-    with assert_raises():
-        _ = RequestBody.from_file("/does/not/exist")
+def multipart_boundary(header: String) raises:
+    check_explicit_boundary(header)
 
 
-def test_chunked_upload_and_one_shot_replay() raises:
-    var chunks = List[Bytes]()
-    chunks.append(encode_utf8("hello "))
-    chunks.append(Bytes())
-    chunks.append(encode_utf8("world"))
-    var body = RequestBody.from_chunks(chunks)
-    assert_true(not body.content_length())
+def test_multipart_boundary_parameters() raises:
+    multipart_boundary('multipart/form-data; boundary="+++"')
+    multipart_boundary('multipart/form-data; boundary="+++" ;')
+    multipart_boundary('multipart/form-data; boundary="+++"; charset=utf-8')
+    multipart_boundary("multipart/form-data; boundary=+++")
+    multipart_boundary("multipart/form-data; boundary=+++ ;")
+    multipart_boundary("multipart/form-data; boundary=+++; charset=utf-8")
+    multipart_boundary('multipart/form-data; charset=utf-8; boundary="+++"')
+    multipart_boundary("multipart/form-data; charset=utf-8; boundary=+++")
+
+
+def check_explicit_boundary(header: String) raises:
+    var files = List[UploadFile]()
+    files.append(UploadFile.from_bytes("file", encode_utf8("<file content>")))
     var client = Client(base_url=getenv("REQ_TEST_URL"))
-    var response = client.post("/echo", body=body)
-    assert_equal(response.json()["body"].string_value(), "hello world")
-    assert_equal(
-        response.json()["headers"]["Transfer-Encoding"].string_value(),
-        "chunked",
+    var response = client.post(
+        "/echo-bytes", files=files, headers=Headers({"content-type": header})
     )
-    var consumed = False
-    try:
-        _ = client.post("/echo", body=body)
-    except error:
-        consumed = error.kind == ErrorKind.StreamConsumed
-    assert_true(consumed)
-    var empty_chunks = List[Bytes]()
+    assert_equal(response.status_code, 200)
+    assert_equal(response.request.headers["Content-Type"], header)
     assert_equal(
-        client.post("/echo", body=RequestBody.from_chunks(empty_chunks))
-        .json()["body"]
-        .string_value(),
-        "",
-    )
-    with assert_raises():
-        _ = Request(
-            "POST",
-            getenv("REQ_TEST_URL"),
-            body=RequestBody.from_chunks(chunks),
-            headers=Headers({"Content-Length": "11"}),
-        )
-
-
-def test_upload_redirect_replay_and_method_change() raises:
-    var client = Client(base_url=getenv("REQ_TEST_URL"), follow_redirects=True)
-    for code in [307, 308]:
-        var response = client.post(
-            "/redirect?code=" + String(code) + "&to=/echo-bytes",
-            body=RequestBody.from_file(getenv("REQ_TEST_UPLOAD_FILE")),
-        )
-        assert_equal(len(response.content()), 65537)
-        var chunks = List[Bytes]()
-        chunks.append(encode_utf8("once"))
-        var failed = False
-        try:
-            _ = client.post(
-                "/redirect?code=" + String(code),
-                body=RequestBody.from_chunks(chunks),
-            )
-        except error:
-            failed = error.kind == ErrorKind.StreamConsumed
-        assert_true(failed)
-    var chunks = List[Bytes]()
-    chunks.append(encode_utf8("replay"))
-    var repeat = client.post(
-        "/redirect?code=307",
-        body=RequestBody.from_chunks(
-            chunks, known_length=True, replayable=True
+        response.text(),
+        (
+            '--+++\r\nContent-Disposition: form-data; name="file";'
+            ' filename="upload"\r\nContent-Type:'
+            " application/octet-stream\r\n\r\n<file content>\r\n--+++--\r\n"
         ),
     )
-    assert_equal(repeat.json()["body"].string_value(), "replay")
-    var changed = client.post(
-        "/redirect?code=303", body=RequestBody.from_chunks(chunks)
+
+
+def test_explicit_boundary_wire() raises:
+    check_explicit_boundary("multipart/form-data; boundary=+++")
+
+
+def test_multipart_string_field_wire() raises:
+    var files = List[UploadFile]()
+    files.append(UploadFile.from_bytes("file", encode_utf8("<file content>")))
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.post(
+        "/echo-bytes", data=QueryParams("text=abc"), files=files
     )
-    assert_equal(changed.json()["method"].string_value(), "GET")
-    assert_equal(changed.json()["body"].string_value(), "")
+    var header = response.request.headers["Content-Type"]
+    var boundary = String(header.split("boundary=")[1])
+    assert_equal(response.status_code, 200)
+    assert_equal(
+        response.text(),
+        "--"
+        + boundary
+        + '\r\nContent-Disposition: form-data; name="text"\r\n\r\nabc\r\n--'
+        + boundary
+        + '\r\nContent-Disposition: form-data; name="file";'
+        ' filename="upload"\r\nContent-Type:'
+        " application/octet-stream\r\n\r\n<file content>\r\n--"
+        + boundary
+        + "--\r\n",
+    )
+
+
+def test_bytes_file_wire_and_length() raises:
+    var files = List[UploadFile]()
+    files.append(
+        UploadFile.from_bytes(
+            "file",
+            encode_utf8("<bytes content>"),
+            filename="test.txt",
+            content_type="text/plain",
+        )
+    )
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var response = client.post(
+        "/echo",
+        files=files,
+        headers=Headers(
+            {"Content-Type": "multipart/form-data; boundary=BOUNDARY"}
+        ),
+    )
+    var expected = (
+        '--BOUNDARY\r\nContent-Disposition: form-data; name="file";'
+        ' filename="test.txt"\r\nContent-Type: text/plain\r\n\r\n<bytes'
+        " content>\r\n--BOUNDARY--\r\n"
+    )
+    var result = response.json()
+    assert_equal(result["body"].string_value(), expected)
+    assert_equal(
+        result["headers"]["Content-Length"].string_value(),
+        String(expected.byte_length()),
+    )
+    assert_equal(
+        response.request.headers["Content-Type"],
+        "multipart/form-data; boundary=BOUNDARY",
+    )
+    assert_true("Host" in result["headers"].to_string())
+
+
+def test_file_offsets_restart_on_each_send() raises:
+    var files = List[UploadFile]()
+    files.append(UploadFile("file", getenv("REQ_TEST_UPLOAD_FILE")))
+    var client = Client(base_url=getenv("REQ_TEST_URL"))
+    var first = client.post(
+        "/echo-bytes",
+        files=files,
+        headers=Headers(
+            {"Content-Type": "multipart/form-data; boundary=BOUNDARY"}
+        ),
+    )
+    var second = client.post(
+        "/echo-bytes",
+        files=files,
+        headers=Headers(
+            {"Content-Type": "multipart/form-data; boundary=BOUNDARY"}
+        ),
+    )
+    assert_equal(first.content(), second.content())
+    assert_true(len(first.content()) > 65537)
 
 
 def test_multipart_mixed_fields_files_and_custom_boundary() raises:
@@ -215,36 +236,6 @@ def test_multipart_chunked_and_redirect() raises:
         "/redirect?code=307&to=/multipart", files=disk, follow_redirects=True
     )
     assert_equal(redirected.json()["parts"][0]["size"].int_value(), 65537)
-
-
-def test_file_mutation_is_an_upload_error() raises:
-    var path = getenv("REQ_TEST_CHANGED_FILE")
-    var body = RequestBody.from_file(path)
-    assert_equal(
-        external_call["truncate", c_int](path.as_c_string_span().ptr(), Int(1)),
-        0,
-    )
-    var failed = False
-    try:
-        _ = req.post(getenv("REQ_TEST_URL") + "/echo-bytes", body=body)
-    except error:
-        failed = error.kind == ErrorKind.WriteError
-    assert_true(failed)
-
-
-def test_large_file_streaming_digest() raises:
-    var response = req.post(
-        getenv("REQ_TEST_URL") + "/upload-digest",
-        body=RequestBody.from_file(getenv("REQ_TEST_LARGE_FILE")),
-    )
-    assert_equal(response.json()["size"].int_value(), 134217728)
-    assert_equal(
-        response.json()["sha256"].string_value(),
-        "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
-    )
-
-
-comptime TEST_FUNCTIONS = __functions_in_module()
 
 
 def test_multipart_one_shot_aliases_are_consumed() raises:

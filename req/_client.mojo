@@ -56,6 +56,8 @@ struct Client(Movable):
         proxy: Optional[String] = None,
         trust_env: Bool = False,
         limits: Limits = Limits(),
+        http1: Bool = True,
+        http2: Bool = False,
     ) raises HTTPError:
         self._pool = None
         self.cookies = cookies
@@ -82,7 +84,7 @@ struct Client(Movable):
                 ErrorKind.InvalidRequest,
                 "Invalid redirect limit or TLS configuration",
             )
-        self._pool = new_pool(limits)
+        self._pool = new_pool(limits, http1=http1, http2=http2)
         if proxy:
             self._validate_proxy(proxy.value())
 

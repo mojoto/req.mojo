@@ -47,6 +47,9 @@ jobs:
           pixi-version: v0.78.0
           locked: true
 
+      - name: Install test dependencies
+        run: make test-deps
+
       - name: Run unit tests
         run: make test
 
