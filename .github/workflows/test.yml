@@ -2,8 +2,14 @@ name: Run Tests
 
 on:
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "website/**"
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "website/**"
   workflow_dispatch:
 
 permissions:
