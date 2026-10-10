@@ -153,15 +153,16 @@ def test_keepalive_expiry_preserves_active_http2_peers() raises:
 
 
 def test_keepalive_expiry_uses_each_connections_idle_time() raises:
-    var client = Client(limits=Limits(keepalive_expiry=0.2))
+    var client = Client(limits=Limits(keepalive_expiry=0.5))
     var url = getenv("REQ_TEST_URL") + "/echo"
     var other_url = getenv("REQ_TEST_OTHER_URL") + "/echo"
     var first = client.get(url).json()["connection"].int_value()
-    sleep(0.15)
+    sleep(0.35)
     var recent = client.get(other_url).json()["connection"].int_value()
-    sleep(0.1)
-    assert_true(client.get(url).json()["connection"].int_value() != first)
+    sleep(0.25)
+    # Check the recent connection before a slow reconnect can also expire it.
     assert_equal(client.get(other_url).json()["connection"].int_value(), recent)
+    assert_true(client.get(url).json()["connection"].int_value() != first)
 
 
 def test_keepalive_expiry_disabled_with_an_active_connection() raises:
