@@ -33,7 +33,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y build-essential libcurl4-openssl-dev openssl
+          sudo apt-get install --no-install-recommends -y build-essential libcurl4-openssl-dev zlib1g-dev openssl
 
       - name: Install Pixi environment
         uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0

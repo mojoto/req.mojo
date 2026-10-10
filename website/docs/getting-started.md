@@ -9,9 +9,9 @@ Install Req and send your first HTTP request from Mojo.
 ## Requirements
 
 Use Mojo **1.1.0**, [Pixi](https://pixi.sh), a C compiler, and libcurl **7.85+**
-with TLS and gzip support. On macOS install the Command Line Tools
+with TLS support, and zlib. On macOS install the Command Line Tools
 (`xcode-select --install`). On Debian/Ubuntu install
-`build-essential libcurl4-openssl-dev openssl`.
+`build-essential libcurl4-openssl-dev zlib1g-dev openssl`.
 
 ## Build from source
 
@@ -46,7 +46,7 @@ Run it with both the native bridge and libcurl linked:
 
 ```sh
 pixi run mojo run -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl main.mojo
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz main.mojo
 ```
 
 `-I .` imports the source package. For a consumer using the precompiled package,

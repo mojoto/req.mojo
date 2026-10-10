@@ -20,6 +20,14 @@ def _slice(text: String, start: Int, end: Int = -1) -> String:
     return String(text[byte=start:stop])
 
 
+def _validate_url_text(text: String) raises HTTPError:
+    if text.byte_length() > 65536:
+        raise HTTPError(ErrorKind.InvalidURL, "URL too long")
+    for byte in text.as_bytes():
+        if byte < 32 or byte == 127:
+            raise HTTPError(ErrorKind.InvalidURL, "Invalid character in URL")
+
+
 def _url_component(
     text: String, *, query: Bool = False
 ) raises HTTPError -> String:
@@ -97,6 +105,7 @@ struct URL(Equatable, ImplicitlyCopyable, Writable):
     var _authority: String
 
     def __init__(out self, text: String) raises HTTPError:
+        _validate_url_text(text)
         var colon = find_byte(text, 58)
         if colon == text.byte_length():
             raise HTTPError(
@@ -159,6 +168,27 @@ struct URL(Equatable, ImplicitlyCopyable, Writable):
                         ErrorKind.InvalidURL,
                         "Host must be an ASCII hostname or IP address",
                     )
+            var octets = self._host.split(".")
+            var ipv4 = len(octets) == 4
+            for octet in octets:
+                if not octet:
+                    ipv4 = False
+                for byte in String(octet).as_bytes():
+                    if not (48 <= Int(byte) <= 57):
+                        ipv4 = False
+            if ipv4:
+                var address = List[UInt8](length=4, fill=0)
+                if (
+                    external_call["inet_pton", c_int](
+                        c_int(2),
+                        self._host.as_c_string_span().ptr(),
+                        address.unsafe_ptr(),
+                    )
+                    != 1
+                ):
+                    raise HTTPError(
+                        ErrorKind.InvalidURL, "Invalid IPv4 address"
+                    )
             if separator < authority.byte_length():
                 port_start = separator + 1
             self._authority = self._host
@@ -214,6 +244,7 @@ struct URL(Equatable, ImplicitlyCopyable, Writable):
         return Self(self.origin() + self._path + "?" + params.encode())
 
     def resolve(self, reference: String) raises HTTPError -> Self:
+        _validate_url_text(reference)
         var fragment = find_byte(reference, 35)
         var target = String(reference[byte=0:fragment])
         var colon = find_byte(target, 58)
@@ -279,6 +310,8 @@ struct QueryParams(ImplicitlyCopyable, Sized, Writable):
             return
         for entry in query.split("&"):
             var pair = String(entry)
+            if not pair:
+                continue
             var split = find_byte(pair, 61)
             var name = percent_decode(String(pair[byte=0:split]), form=True)
             var value = String()

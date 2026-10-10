@@ -23,9 +23,9 @@ Language: English | [中文](README.zh-CN.md)
 ## Installation
 
 Req builds from source with Mojo 1.1.0, [Pixi](https://pixi.sh), a C compiler,
-libcurl 7.85+ with TLS and gzip support. On macOS, install the Command Line
+libcurl 7.85+ with TLS support, and zlib. On macOS, install the Command Line
 Tools. On Debian/Ubuntu, install
-`build-essential libcurl4-openssl-dev openssl`.
+`build-essential libcurl4-openssl-dev zlib1g-dev openssl`.
 
 ```bash
 git clone https://github.com/mojoto/req.mojo.git
@@ -55,11 +55,11 @@ def main() raises:
     print(response.text())
 ```
 
-Run it with the native transport bridge and libcurl linked:
+Run it with the native transport bridge, libcurl, and zlib linked:
 
 ```bash
 pixi run mojo run -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl main.mojo
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz main.mojo
 ```
 
 Req supports HTTP and verified HTTPS, query parameters, repeated headers,
@@ -106,6 +106,10 @@ root. It removes temporary files after the run.
 The documentation targets require Node.js 22+ and npm. Run `make doc-install`
 before building the documentation, then use `make doc-build` followed by
 `make doc-serve` to preview the built site.
+
+The [compatibility scenarios](tests/compat/README.md) record the pinned baseline,
+native test mappings, API adaptations, and exclusions. The runner validates this
+inventory before executing the tests.
 
 See the [getting started guide](https://mojoto.github.io/req.mojo/docs/getting-started)
 and [development guide](https://mojoto.github.io/req.mojo/docs/development) for

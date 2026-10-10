@@ -111,13 +111,27 @@ struct CookieJar(ImplicitlyCopyable):
             raise HTTPError(
                 ErrorKind.InvalidRequest, "Invalid cookie expiration"
             )
-        self.delete(name, domain=normalized, path=path)
-        if not expires or expires.value() > _now():
-            self._cookies.append(
-                _Cookie(
-                    name, value, normalized, path, secure, expires, host_only
-                )
-            )
+        if expires and expires.value() <= _now():
+            self.delete(name, domain=normalized, path=path)
+            return
+        var replacement = _Cookie(
+            name, value, normalized, path, secure, expires, host_only
+        )
+        for i in range(len(self._cookies)):
+            if (
+                self._cookies[i].name == name
+                and self._cookies[i].domain == normalized
+                and self._cookies[i].path == path
+            ):
+                if (
+                    self._cookies[i].expires
+                    and self._cookies[i].expires.value() <= _now()
+                ):
+                    self.delete(name, domain=normalized, path=path)
+                    break
+                self._cookies[i] = replacement
+                return
+        self._cookies.append(replacement)
 
     def get(
         self, name: String, *, domain: String, path: String = "/"
@@ -171,15 +185,17 @@ struct CookieJar(ImplicitlyCopyable):
             ):
                 selected.append(cookie)
         # Longer paths precede shorter paths, preserving order within one scope.
-        for i in range(len(selected)):
-            for j in range(i + 1, len(selected)):
-                if (
-                    selected[j].path.byte_length()
-                    > selected[i].path.byte_length()
-                ):
-                    var previous = selected[i]
-                    selected[i] = selected[j]
-                    selected[j] = previous
+        for i in range(1, len(selected)):
+            var cookie = selected[i]
+            var j = i
+            while (
+                j > 0
+                and selected[j - 1].path.byte_length()
+                < cookie.path.byte_length()
+            ):
+                selected[j] = selected[j - 1]
+                j -= 1
+            selected[j] = cookie
         var result = String()
         for cookie in selected:
             if result:
@@ -214,7 +230,8 @@ struct CookieJar(ImplicitlyCopyable):
                     domain = String(value.lower().strip("."))
                     host_only = False
                     valid = (
-                        Bool(domain)
+                        valid
+                        and Bool(domain)
                         and _domain_match(url.host(), domain)
                         and ("." in domain or domain == url.host())
                     )

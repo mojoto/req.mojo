@@ -2,7 +2,7 @@ MOJO ?= pixi run mojo
 MOJO_FLAGS ?= --Werror -I .
 PYTHON ?= pixi run python
 CFLAGS ?= -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror
-LINK_FLAGS := -Xlinker build/libreq_curl.a -Xlinker -lcurl
+LINK_FLAGS := -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz
 
 DOCS_DIR := website
 

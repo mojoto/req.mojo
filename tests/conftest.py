@@ -43,8 +43,67 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-        if path.path == "/redirect":
+        if path.path == "/echo-bytes":
+            self.respond(body, headers=[("Content-Type", "application/octet-stream")])
+        elif path.path == "/echo-headers":
+            values = self.headers.get_all("X-Repeated", [])
+            self.respond(json.dumps({"values": values}).encode(), headers=[("Content-Type", "application/json")])
+        elif path.path == "/redirect":
             self.respond(status=int(query.get("code", ["302"])[0]), headers=[("Location", query.get("to", ["/echo"])[0])])
+        elif path.path == "/redirect-chain":
+            count = int(query.get("count", ["0"])[0])
+            if count:
+                self.respond(status=302, headers=[("Location", f"/redirect-chain?count={count - 1}")])
+            else:
+                self.respond(b"finished")
+        elif path.path == "/redirect-cookie":
+            value = "session=active; Path=/; Max-Age=1209600"
+            if query.get("delete"):
+                value = "session=gone; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+            self.respond(status=303, headers=[("Location", "/echo"), ("Set-Cookie", value)])
+        elif path.path == "/encoded":
+            kind = query.get("kind", ["identity"])[0]
+            plain = b"" if query.get("empty") else b"test 123"
+            if query.get("payload") == ["binary"]:
+                plain = bytes(range(256)) * 8
+            if kind == "gzip":
+                encoded = gzip.compress(plain)
+            elif kind == "deflate":
+                encoded = zlib.compress(plain)
+            elif kind == "raw-deflate":
+                compressor = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+                encoded = compressor.compress(plain) + compressor.flush()
+            elif kind == "multi":
+                encoded = gzip.compress(zlib.compress(plain))
+            elif kind == "multi-raw":
+                compressor = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+                encoded = gzip.compress(compressor.compress(plain) + compressor.flush())
+            elif kind == "ambiguous-deflate":
+                plain = b"A" * 156
+                encoded = b"\x78\x9c\x00\x63\xff" + plain + b"\x03\x00"
+            else:
+                encoded = plain
+            encoding = {"raw-deflate": "deflate", "ambiguous-deflate": "deflate", "multi": "deflate, gzip", "multi-raw": "deflate, gzip"}.get(kind, kind)
+            if query.get("invalid"):
+                encoded = b"invalid"
+            if query.get("zero"):
+                encoded = b""
+            if query.get("truncate"):
+                encoded = encoded[:-1]
+            if query.get("concatenate"):
+                encoded += gzip.compress(plain)
+            if query.get("fragment"):
+                self.send_response(200)
+                self.send_header("Content-Encoding", encoding)
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                for offset in range(0, len(encoded), 3):
+                    fragment = encoded[offset:offset + 3]
+                    self.wfile.write(f"{len(fragment):x}\r\n".encode() + fragment + b"\r\n")
+                    self.wfile.flush()
+                self.wfile.write(b"0\r\n\r\n")
+            else:
+                self.respond(encoded, headers=[("Content-Encoding", encoding)])
         elif path.path == "/loop":
             self.respond(status=302, headers=[("Location", "/loop")])
         elif path.path == "/cookies/set":

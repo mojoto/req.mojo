@@ -21,9 +21,9 @@
 
 ## 安装
 
-Req 使用 Mojo 1.1.0、[Pixi](https://pixi.sh)、C 编译器和支持 TLS 及 gzip 的
-libcurl 7.85+ 从源码构建。macOS 请安装 Command Line Tools；
-Debian/Ubuntu 请安装 `build-essential libcurl4-openssl-dev openssl`。
+Req 使用 Mojo 1.1.0、[Pixi](https://pixi.sh)、C 编译器、支持 TLS 的
+libcurl 7.85+ 和 zlib 从源码构建。macOS 请安装 Command Line Tools；
+Debian/Ubuntu 请安装 `build-essential libcurl4-openssl-dev zlib1g-dev openssl`。
 
 ```bash
 git clone https://github.com/mojoto/req.mojo.git
@@ -52,11 +52,11 @@ def main() raises:
     print(response.text())
 ```
 
-运行时链接原生传输桥接库和 libcurl：
+运行时链接原生传输桥接库、libcurl 和 zlib：
 
 ```bash
 pixi run mojo run -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl main.mojo
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz main.mojo
 ```
 
 Req 支持 HTTP、经过证书验证的 HTTPS、查询参数、重复请求头、表单、原生 JSON，
@@ -96,6 +96,9 @@ Req 支持 HTTP、经过证书验证的 HTTPS、查询参数、重复请求头�
 
 文档相关目标需要 Node.js 22+ 和 npm。先运行 `make doc-install` 安装依赖，
 再依次运行 `make doc-build` 和 `make doc-serve` 预览构建结果。
+
+[兼容性场景](tests/compat/README.md) 记录了固定版本的基线、原生测试映射、
+API 适配和排除项。运行器会在执行测试前验证这份清单。
 
 包集成方式和文档构建命令见
 [快速开始](https://mojoto.github.io/req.mojo/zh-Hans/docs/getting-started)及

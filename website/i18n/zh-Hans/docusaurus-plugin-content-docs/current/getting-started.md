@@ -8,7 +8,7 @@ title: 快速开始
 
 ## 环境要求
 
-需要 Mojo **1.1.0**、[Pixi](https://pixi.sh)、C 编译器，以及支持 TLS 和 gzip 的 libcurl **7.85+**。macOS 安装 Command Line Tools（`xcode-select --install`）；Debian/Ubuntu 安装 `build-essential libcurl4-openssl-dev openssl`。
+需要 Mojo **1.1.0**、[Pixi](https://pixi.sh)、C 编译器，支持 TLS 的 libcurl **7.85+**，以及 zlib。macOS 安装 Command Line Tools（`xcode-select --install`）；Debian/Ubuntu 安装 `build-essential libcurl4-openssl-dev zlib1g-dev openssl`。
 
 ## 从源码构建
 
@@ -41,7 +41,7 @@ def main() raises:
 
 ```sh
 pixi run mojo run -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl main.mojo
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz main.mojo
 ```
 
 `-I .` 导入源码包。如果其他项目使用预编译包，需要把包所在目录加入导入路径，并同样链接桥接库和 libcurl。仅 `import req` 不会自动链接 C 传输层。

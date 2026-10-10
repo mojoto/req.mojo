@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from conftest import Fixtures
+from compat.check_baseline import validate_baseline
 
 
 def discovery_source(modules):
@@ -42,9 +43,10 @@ def discovery_source(modules):
 
 def main():
     os.chdir(Path(__file__).resolve().parents[1])
+    validate_baseline()
     mojo = shlex.split(os.environ.get("REQ_MOJO", "pixi run mojo"))
     flags = shlex.split(os.environ.get("REQ_MOJO_FLAGS", "--Werror -I ."))
-    links = ["-Xlinker", "build/libreq_curl.a", "-Xlinker", "-lcurl"]
+    links = ["-Xlinker", "build/libreq_curl.a", "-Xlinker", "-lcurl", "-Xlinker", "-lz"]
     binary = Path(".req-test-suite")
     entry = Path(".req-test-main.mojo")
     modules = sorted(Path("tests").rglob("test_*.mojo"))

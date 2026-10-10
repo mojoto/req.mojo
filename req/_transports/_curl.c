@@ -4,7 +4,20 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
+#include <zlib.h>
+
+#define MAX_DECODERS 5
+
+typedef struct {
+    z_stream stream;
+    unsigned char input[CURL_MAX_WRITE_SIZE];
+    int gzip, initialized, ended;
+    unsigned char *probe;
+    size_t probe_size;
+    int probing;
+} Decoder;
 
 typedef struct Transfer Transfer;
 typedef struct {
@@ -29,6 +42,8 @@ struct Transfer {
     double connect_timeout, read_timeout, write_timeout;
     double started, last_read, last_write;
     curl_off_t downloaded, uploaded;
+    Decoder decoders[MAX_DECODERS];
+    int decoder_count;
 };
 
 static double now_seconds(void) {
@@ -54,6 +69,39 @@ static void finish(Transfer *t, int error) {
         curl_easy_cleanup(t->easy);
         t->easy = NULL;
     }
+}
+
+static int configure_decoders(Transfer *t) {
+    char *headers = strdup(t->headers);
+    if (!headers) return 3;
+    char *save = NULL;
+    for (char *line = strtok_r(headers, "\r\n", &save); line;
+         line = strtok_r(NULL, "\r\n", &save)) {
+        if (strncasecmp(line, "Content-Encoding:", 17)) continue;
+        char *encoding_save = NULL;
+        for (char *encoding = strtok_r(line + 17, ",", &encoding_save); encoding;
+             encoding = strtok_r(NULL, ",", &encoding_save)) {
+            while (*encoding == ' ' || *encoding == '\t') encoding++;
+            size_t length = strlen(encoding);
+            while (length && (encoding[length - 1] == ' ' || encoding[length - 1] == '\t'))
+                encoding[--length] = 0;
+            if (!strcasecmp(encoding, "identity")) continue;
+            if (t->decoder_count == MAX_DECODERS ||
+                (strcasecmp(encoding, "gzip") && strcasecmp(encoding, "deflate"))) {
+                free(headers);
+                return 13;
+            }
+            t->decoders[t->decoder_count++].gzip = !strcasecmp(encoding, "gzip");
+        }
+    }
+    free(headers);
+    for (int i = 0; i < t->decoder_count / 2; i++) {
+        int j = t->decoder_count - i - 1;
+        int gzip = t->decoders[i].gzip;
+        t->decoders[i].gzip = t->decoders[j].gzip;
+        t->decoders[j].gzip = gzip;
+    }
+    return -1;
 }
 
 static int map_error(CURLcode code, Transfer *t) {
@@ -91,7 +139,11 @@ static size_t on_headers(char *data, size_t size, size_t count, void *context) {
     if (n == 2 && data[0] == '\r' && data[1] == '\n') {
         long status = 0;
         curl_easy_getinfo(t->easy, CURLINFO_RESPONSE_CODE, &status);
-        if (status >= 200) t->header_ready = 1;
+        if (status >= 200) {
+            t->header_ready = 1;
+            t->error = configure_decoders(t);
+            if (t->error >= 0) return 0;
+        }
     }
     t->last_read = now_seconds();
     return n;
@@ -215,6 +267,7 @@ void *req_transfer_new(void *handle, const char *method, const char *url,
     SET(CURLOPT_SSL_VERIFYHOST, verify ? 2L : 0L);
     if (ca_file && *ca_file) SET(CURLOPT_CAINFO, ca_file);
     SET(CURLOPT_ACCEPT_ENCODING, "gzip, deflate");
+    SET(CURLOPT_HTTP_CONTENT_DECODING, 0L);
     long connect_ms = LONG_MAX;
     if (connect_timeout > 0 && connect_timeout < (double)LONG_MAX / 1000 - 1)
         connect_ms = (long)(connect_timeout * 1000 + 1);
@@ -266,8 +319,7 @@ int req_transfer_headers(void *handle) {
 const char *req_transfer_header_data(void *handle) { return ((Transfer *)handle)->headers; }
 size_t req_transfer_header_size(void *handle) { return ((Transfer *)handle)->header_size; }
 
-int64_t req_transfer_read(void *handle, unsigned char *buffer, size_t capacity) {
-    Transfer *t = handle;
+static int64_t read_wire(Transfer *t, unsigned char *buffer, size_t capacity) {
     if (t->pool->closed) return -17; /* -(ErrorKind.StreamClosed + 1) */
     t->receiving = 1;
     t->last_read = now_seconds(); /* Time spent in application code is not an I/O wait. */
@@ -293,6 +345,116 @@ int64_t req_transfer_read(void *handle, unsigned char *buffer, size_t capacity) 
     return t->error >= 0 ? -(int64_t)(t->error + 1) : 0;
 }
 
+static void clear_probe(Decoder *decoder) {
+    free(decoder->probe);
+    decoder->probe = NULL;
+    decoder->probe_size = 0;
+    decoder->probing = 0;
+}
+
+static int save_probe(Decoder *decoder, const unsigned char *input, size_t size) {
+    /* A raw stream with a zlib-looking prefix starts with a stored block.
+       Retain at most that block's maximum size plus its five-byte header. */
+    if (decoder->probe_size + size > 65540) {
+        clear_probe(decoder);
+        return 1;
+    }
+    unsigned char *probe = realloc(decoder->probe, decoder->probe_size + size);
+    if (!probe) return 0;
+    memcpy(probe + decoder->probe_size, input, size);
+    decoder->probe = probe;
+    decoder->probe_size += size;
+    return 1;
+}
+
+static int retry_raw(Decoder *decoder) {
+    inflateEnd(&decoder->stream);
+    memset(&decoder->stream, 0, sizeof(decoder->stream));
+    decoder->initialized = 0;
+    if (inflateInit2(&decoder->stream, -MAX_WBITS) != Z_OK) return 0;
+    decoder->initialized = 1;
+    decoder->stream.next_in = decoder->probe;
+    decoder->stream.avail_in = (uInt)decoder->probe_size;
+    decoder->probing = 2;
+    return 1;
+}
+
+static int64_t read_decoded(Transfer *t, int index, unsigned char *buffer, size_t capacity) {
+    if (index < 0) return read_wire(t, buffer, capacity);
+    Decoder *decoder = &t->decoders[index];
+    z_stream *stream = &decoder->stream;
+    if (!decoder->initialized) {
+        size_t prefix_size = 0;
+        while (prefix_size < 2) {
+            int64_t n = read_decoded(t, index - 1, decoder->input + prefix_size, 2 - prefix_size);
+            if (n < 0) return n;
+            if (!n) return prefix_size ? -14 : 0;
+            prefix_size += (size_t)n;
+        }
+        /* Decide the deflate wrapper only after both header bytes arrive. */
+        unsigned int header = ((unsigned int)decoder->input[0] << 8) | decoder->input[1];
+        int wrapped = (decoder->input[0] & 15) == Z_DEFLATED &&
+                      (decoder->input[0] >> 4) <= 7 && header % 31 == 0;
+        int window_bits = decoder->gzip ? MAX_WBITS + 16 : (wrapped ? MAX_WBITS : -MAX_WBITS);
+        if (inflateInit2(stream, window_bits) != Z_OK) return -14;
+        decoder->initialized = 1;
+        stream->next_in = decoder->input;
+        stream->avail_in = (uInt)prefix_size;
+        if (!decoder->gzip && wrapped) {
+            decoder->probing = 1;
+            if (!save_probe(decoder, decoder->input, prefix_size)) return -4;
+        }
+    }
+    for (;;) {
+        if (decoder->ended) {
+            if (!stream->avail_in) {
+                int64_t n = read_decoded(t, index - 1, decoder->input, sizeof(decoder->input));
+                if (n <= 0) return n;
+                stream->next_in = decoder->input;
+                stream->avail_in = (uInt)n;
+            }
+            if (!decoder->gzip || inflateReset2(stream, MAX_WBITS + 16) != Z_OK) return -14;
+            decoder->ended = 0;
+        }
+        uInt available = stream->avail_in;
+        uInt output_size = capacity > UINT_MAX ? UINT_MAX : (uInt)capacity;
+        stream->next_out = buffer;
+        stream->avail_out = output_size;
+        int result = inflate(stream, Z_NO_FLUSH);
+        if ((result == Z_DATA_ERROR || result == Z_NEED_DICT) && decoder->probing == 1) {
+            if (!retry_raw(decoder)) return -14;
+            continue;
+        }
+        if (result != Z_OK && result != Z_STREAM_END && result != Z_BUF_ERROR) return -14;
+        decoder->ended = result == Z_STREAM_END;
+        size_t produced = output_size - stream->avail_out;
+        if (decoder->probing == 1 && (produced || decoder->ended)) clear_probe(decoder);
+        if (produced) return (int64_t)produced;
+        if (!stream->avail_in && !decoder->ended) {
+            if (decoder->probing == 2) clear_probe(decoder);
+            int64_t n = read_decoded(t, index - 1, decoder->input, sizeof(decoder->input));
+            if (n < 0) return n;
+            if (!n) {
+                if (decoder->probing == 1 && retry_raw(decoder)) continue;
+                return -14;
+            }
+            if (decoder->probing == 1 && !save_probe(decoder, decoder->input, (size_t)n)) return -4;
+            stream->next_in = decoder->input;
+            stream->avail_in = (uInt)n;
+            continue;
+        }
+        if (!decoder->ended && stream->avail_in == available && available) return -14;
+    }
+}
+
+int64_t req_transfer_read(void *handle, unsigned char *buffer, size_t capacity) {
+    Transfer *t = handle;
+    if (t->pool->closed) return -17;
+    int64_t result = read_decoded(t, t->decoder_count - 1, buffer, capacity);
+    if (result < 0) finish(t, (int)(-result - 1));
+    return result;
+}
+
 void req_transfer_free(void *handle) {
     Transfer *t = handle;
     if (!t) return;
@@ -301,6 +463,10 @@ void req_transfer_free(void *handle) {
     while (*link && *link != t) link = &(*link)->next;
     if (*link) *link = t->next;
     curl_slist_free_all(t->request_headers);
+    for (int i = 0; i < t->decoder_count; i++) {
+        if (t->decoders[i].initialized) inflateEnd(&t->decoders[i].stream);
+        clear_probe(&t->decoders[i]);
+    }
     free(t->upload);
     free(t->headers);
     Pool *p = t->pool;
