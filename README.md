@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="website/static/img/req-logo.svg" alt="Req.mojo logo" width="96" height="96" />
+</p>
+
 # Req.mojo
 
 A synchronous HTTP client for Mojo.

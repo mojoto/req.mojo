@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="website/static/img/req-logo.svg" alt="Req.mojo logo" width="96" height="96" />
+</p>
+
 # Req.mojo
 
 面向 Mojo 的同步 HTTP 客户端。
