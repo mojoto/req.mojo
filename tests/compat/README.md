@@ -4,8 +4,9 @@ The pinned baseline is version 0.28.1, revision
 `26d48e0634e6ee9cdc0533996db289ce4b430177`.
 
 The baseline contains **539 test functions and 1,418 collected cases** after
-parameter expansion. The native suite contains **296 test functions**, including
-parameter tables. Function counts and expanded case counts are different units.
+parameter expansion. The runner collects **493 independent compatibility cases
+and 95 additional regression tests**, for **588 executed tests**. Each mapped
+identity has its own name and pass/fail result, including every URL table row.
 
 | Inventory | Mapped to native tests | Excluded | Total |
 | --- | ---: | ---: | ---: |
@@ -18,14 +19,31 @@ are not counted as mapped just because another parameter of the same function
 has a native equivalent. The `scope` entries identify omitted assertions and
 native contract differences. A mapping means the supported or adapted behavior
 is exercised; it does **not** claim identical APIs or all baseline assertions.
-Some async/backend repetitions map to the same synchronous native test.
+Some async/backend repetitions execute the same synchronous native assertions
+under separate baseline identities. Those results do not validate async backends
+or represent distinct native behaviors. Tuple query-parameter inputs use the
+native String-pair list constructor.
 
 `make test` validates all identities, function references, native test targets
-and executable URL table keys before compiling and running the suite. This is
-an inventory consistency check, not an assertion-equivalence proof. No baseline
-download or extra Python dependency is required.
+and executable URL table keys before compiling and running the suite. It also
+requires a unique semantic execution name and a valid assertion call for every
+mapped identity. This is an inventory consistency check, not an
+assertion-equivalence proof. No baseline download or extra Python dependency is
+required.
 
-`url_cases.mojo` executes all 229 applicable HTTP(S) canonical URL rows, without
+`make test TEST_ARGS="--list"` lists the collected case names without compiling.
+`--only <name>` selects an individual case. Parameter names describe their URL,
+encoding or constructor variant rather than incrementing numbers. Long or
+otherwise identical corpus names have a stable fingerprint suffix.
+
+After execution, `build/test-results.json` records each compatibility identity,
+execution name and observed result. Missing results remain `not_run`; selected
+runs never claim the entire collection passed. An unfiltered run fails unless
+all 493 mapped identities report success. Native regressions whose assertions
+are replaced by narrower parameter checks remain in the additional collection;
+only the two fully expanded canonical URL loops are omitted.
+
+`url_cases.mojo` supplies all 229 applicable HTTP(S) canonical URL rows, without
 deduplicating repeated addresses: 194 parse cases and 35 native-policy rejection
 cases. The remaining 334 canonical corpus rows use schemes outside the API.
 The corpus parses canonical `href`, matching the baseline scenario, rather than

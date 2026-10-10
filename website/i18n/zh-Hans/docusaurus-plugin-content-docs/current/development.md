@@ -8,12 +8,13 @@ title: 开发指南
 
 ```sh
 make test
+make test TEST_ARGS="--list"
 make test TEST_ARGS="--only test_client_requests_and_reuse"
 make format
 make clean
 ```
 
-测试使用本地 HTTP/TLS 服务。运行器收集测试模块，用 Mojo TestSuite 发现 `test_` 函数，构建一个 `.req-test-suite` 可执行文件，运行后清理临时文件。`make build` 构建原生桥接库并预编译 `req`；`make clean` 清理原生和包构建产物。
+测试使用本地 HTTP/TLS 服务。运行器逐项收集已映射的兼容场景和其余原生回归测试，使用 Mojo TestSuite 构建一个 `.req-test-suite` 可执行文件，运行后清理临时文件。`--list` 列出语义化用例名称；`--only <name>` 选择单个用例。`build/test-results.json` 记录每项兼容场景的实际执行结果。覆盖范围和 API 适配见[兼容性清单](https://github.com/mojoto/req.mojo/blob/main/tests/compat/README.md)。`make build` 构建原生桥接库并预编译 `req`；`make clean` 清理原生和包构建产物。
 
 ## 文档网站
 

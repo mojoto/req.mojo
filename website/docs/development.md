@@ -8,13 +8,19 @@ title: Development
 
 ```sh
 make test
+make test TEST_ARGS="--list"
 make test TEST_ARGS="--only test_client_requests_and_reuse"
 make format
 make clean
 ```
 
-Tests use local HTTP/TLS fixtures. The runner collects test modules, discovers
-`test_` functions with Mojo TestSuite, and builds one `.req-test-suite` executable.
+Tests use local HTTP/TLS fixtures. The runner independently collects each mapped
+compatibility case and the remaining native regressions, then builds one
+`.req-test-suite` executable using Mojo TestSuite. `--list` shows semantic case
+names; `--only <name>` selects one case. `build/test-results.json` records the
+observed result for each compatibility identity. See the
+[compatibility inventory](https://github.com/mojoto/req.mojo/blob/main/tests/compat/README.md)
+for coverage and API adaptations.
 It removes temporary test files after the run. `make build` builds the native
 bridge and precompiles `req`; `make clean` removes native/package build output.
 
