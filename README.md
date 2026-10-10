@@ -47,12 +47,16 @@ def main() raises:
     print(response.text())
 ```
 
-Run:
+Compile with the native bridge, libcurl, and zlib linked, then run:
 
 ```bash
-pixi run mojo run -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz main.mojo
+pixi run mojo build -I . \
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
+  main.mojo -o build/main
+./build/main
 ```
+
+`mojo run` ignores the static native bridge passed through `-Xlinker`.
 
 See the [getting started guide](https://mojoto.github.io/req.mojo/docs/getting-started)
 for more examples and package integration.

@@ -37,12 +37,16 @@ def main() raises:
     print(response.text())
 ```
 
-运行时同时链接原生桥接库和 libcurl：
+编译时链接原生桥接库、libcurl 和 zlib，然后运行：
 
 ```sh
-pixi run mojo run -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz main.mojo
+pixi run mojo build -I . \
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
+  main.mojo -o build/main
+./build/main
 ```
+
+`mojo run` 会忽略通过 `-Xlinker` 传入的静态桥接库。
 
 `-I .` 导入源码包。如果其他项目使用预编译包，需要把包所在目录加入导入路径，并同样链接桥接库和 libcurl。仅 `import req` 不会自动链接 C 传输层。
 

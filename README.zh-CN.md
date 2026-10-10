@@ -47,12 +47,16 @@ def main() raises:
     print(response.text())
 ```
 
-运行：
+编译时链接原生桥接库、libcurl 和 zlib，然后运行：
 
 ```bash
-pixi run mojo run -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz main.mojo
+pixi run mojo build -I . \
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
+  main.mojo -o build/main
+./build/main
 ```
+
+`mojo run` 会忽略通过 `-Xlinker` 传入的静态桥接库。
 
 更多示例和包集成方式见[快速开始](https://mojoto.github.io/req.mojo/zh-Hans/docs/getting-started)。
 

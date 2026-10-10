@@ -42,12 +42,16 @@ def main() raises:
     print(response.text())
 ```
 
-Run it with both the native bridge and libcurl linked:
+Compile with the native bridge, libcurl, and zlib linked, then run:
 
 ```sh
-pixi run mojo run -I . \
-  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz main.mojo
+pixi run mojo build -I . \
+  -Xlinker build/libreq_curl.a -Xlinker -lcurl -Xlinker -lz \
+  main.mojo -o build/main
+./build/main
 ```
+
+`mojo run` ignores the static native bridge passed through `-Xlinker`.
 
 `-I .` imports the source package. For a consumer using the precompiled package,
 add its directory to the import path and link the native bridge and libcurl as
