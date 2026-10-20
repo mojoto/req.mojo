@@ -30,6 +30,7 @@ def __init__(
     *,
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
 ) raises HTTPError
 
 def __init__(out self, *, copy: Self)
@@ -53,4 +54,9 @@ method: String
 url: URL
 headers: Headers
 content: Optional[Bytes]
+body: Optional[RequestBody]
 ```
+
+`body` 接受 [RequestBody](./uploads.md)，不能与 `content` 同用。
+RequestBody 副本共享数据源；一次性数据源的消费状态也会共享。
+已知长度请求体的 Content-Length 必须匹配；未知长度由传输层选择分帧方式。

@@ -7,7 +7,7 @@ NATIVE_FLAGS := $(if $(filter Darwin,$(shell uname -s)),-dynamiclib,-shared)
 
 DOCS_DIR := website
 
-.PHONY: install install-hooks native test-native test-deps test test-package build format clean doc-install doc-start doc-build doc-serve doc-clean
+.PHONY: install install-hooks native test-native test-deps test test-package test-docs build format clean doc-install doc-start doc-build doc-serve doc-clean
 
 install:
 	pixi install
@@ -46,6 +46,9 @@ build: native
 
 test-package: build
 	$(PYTHON) tests/test_package.py
+
+test-docs:
+	REQ_MOJO="$(MOJO)" $(PYTHON) tests/test_docs.py
 
 format:
 	$(MOJO) format req tests

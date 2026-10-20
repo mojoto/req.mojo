@@ -27,6 +27,13 @@ def __init__(
     max_redirects: Int = 20,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
+    http1: Bool = True,
+    http2: Bool = False,
+    transport: Transport = Transport(),
+    event_hooks: EventHooks = EventHooks(),
 ) raises HTTPError
 ```
 
@@ -52,6 +59,8 @@ def build_request(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -105,6 +114,8 @@ def request(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -126,6 +137,8 @@ def stream(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -180,6 +193,8 @@ def post(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -190,7 +205,7 @@ def post(
 
 ## `put`
 
-客户端版本的 `put()`。发送 PUT，常用于整体替换资源，支持三种请求体格式。Req 发送你指定的方法和请求体，不实现业务层替换逻辑或自动重试。 通过 `build_request()` 应用客户端默认值；未覆盖时继承超时和重定向配置。返回 Response，状态和传输错误与 `Client.request()` 一致。
+客户端版本的 `put()`。发送 PUT，常用于整体替换资源，支持字节、JSON、表单、流式请求体和 multipart 文件。Req 发送你指定的方法和请求体，不实现业务层替换逻辑或自动重试。 通过 `build_request()` 应用客户端默认值；未覆盖时继承超时和重定向配置。返回 Response，状态和传输错误与 `Client.request()` 一致。
 
 ```text
 def put(
@@ -200,6 +215,8 @@ def put(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -220,6 +237,8 @@ def patch(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -240,6 +259,8 @@ def delete(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -260,6 +281,8 @@ def options(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -310,3 +333,10 @@ def is_closed(self) -> Bool
 ```text
 cookies: CookieJar
 ```
+
+## 传输配置与钩子
+
+`proxy`、`trust_env`、`http1`、`http2` 见 [HTTP/2 与代理](../networking.md)。
+`limits` 见 [Limits](./limits.md)，`body`、`files` 见[上传](./uploads.md)。
+`transport` 替换默认传输实现；配置见[传输层](./transports.md)。
+`event_hooks: EventHooks` 是公开字段，用法见[事件钩子](./hooks.md)。

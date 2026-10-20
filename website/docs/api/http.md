@@ -10,12 +10,11 @@ to five seconds per phase, `follow_redirects` to `False`, and `verify` to `True`
 `ca_file=None` uses the transport's default trust store; a custom CA file is
 only valid when verification is enabled.
 
-Body-bearing helpers accept **one** of `content: Optional[Bytes]`,
-`data: Optional[QueryParams]` (URL-encoded form), or `json: Optional[JSONValue]`.
-JSON/form content types are filled in when you did not supply one. Module-level
-calls use a fresh client; use [Client](./client.md) for connection and cookie
-reuse across calls. Every network operation can raise [HTTPError](./errors.md).
-An HTTP 4xx/5xx response is returned normally until `raise_for_status()`.
+Body formats `content`, `data`, `json`, and `body` are mutually exclusive;
+`files` may be combined only with `data`. See [uploads](./uploads.md).
+JSON/form Content-Type is filled in when absent. Module-level calls use a fresh
+client; use [Client](./client.md) for reuse, HTTP/2 selection, or hooks.
+HTTP 4xx/5xx returns normally until `raise_for_status()`.
 
 ## Common parameters
 
@@ -28,12 +27,15 @@ An HTTP 4xx/5xx response is returned normally until `raise_for_status()`.
 | `data` | Form fields encoded as `application/x-www-form-urlencoded`. |
 | `json` | JSONValue serialized as `application/json`. |
 | `auth` | Basic/Bearer authentication, disabled by default; existing Authorization takes precedence. |
-| `timeout` | Independent connect, read, and write phase timeouts, each defaulting to 5 seconds. |
+| `timeout` | Independent connect, read, write, and pool phase timeouts, each defaulting to 5 seconds. |
 | `follow_redirects` | Whether to follow redirects, False by default. |
 | `verify` | Whether to validate HTTPS certificates, True by default. |
 | `ca_file` | Custom CA file path, otherwise the transport trust store is used. |
+| `body`, `files` | [Streaming bodies and multipart uploads](./uploads.md). |
+| `proxy`, `trust_env` | [Proxy/environment routing](../networking.md); environment reads default off. |
+| `limits` | [Connection pool limits](./limits.md). |
 
-`get()` and `head()` do not accept `content`, `data`, or `json`. Exact signatures follow below.
+`get()` and `head()` have no body keywords, including `body` and `files`. Exact signatures follow below.
 
 ## `request`
 
@@ -54,6 +56,8 @@ def request(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -61,6 +65,9 @@ def request(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -85,6 +92,9 @@ def get(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -109,6 +119,9 @@ def head(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -129,6 +142,8 @@ def post(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -136,6 +151,9 @@ def post(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -147,7 +165,7 @@ response.raise_for_status()
 
 ## `put`
 
-Send a PUT request, commonly used to replace a resource. Accepts the three body formats. Req sends exactly your selected method/body and does not implement an application-level replacement or retry policy. HTTP and transport failure behavior is the same as `request()`.
+Send a PUT request, commonly used to replace a resource. Accepts bytes, JSON, forms, streaming bodies, and multipart files. Req sends exactly your selected method/body and does not implement an application-level replacement or retry policy. HTTP and transport failure behavior is the same as `request()`.
 
 ```text
 def put(
@@ -156,6 +174,8 @@ def put(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -163,6 +183,9 @@ def put(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -183,6 +206,8 @@ def patch(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -190,6 +215,9 @@ def patch(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -210,6 +238,8 @@ def delete(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -217,6 +247,9 @@ def delete(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -237,6 +270,8 @@ def options(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -244,6 +279,9 @@ def options(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -270,6 +308,8 @@ def stream(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -277,6 +317,9 @@ def stream(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 

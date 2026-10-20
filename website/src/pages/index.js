@@ -10,37 +10,37 @@ const copy = {
     title: 'Make HTTP requests', accent: 'the Mojo way.',
     description: 'A native synchronous HTTP client. From a simple GET to persistent sessions and streaming responses — with an API that stays out of your way.',
     start: 'Get started', api: 'Explore the API',
-    caption: 'HTTP/1.1 · Verified HTTPS · Native JSON',
+    caption: 'HTTP/1.1 + HTTP/2 · Verified HTTPS · Multipart',
     tabs: ['First request', 'Persistent client', 'Streaming'],
     why: 'Everything a request needs.',
     whyText: 'A small, explicit API for the work between your application and the network.',
     features: [
       ['shield', 'Secure by default', 'Verified TLS and five-second phase timeouts. Redirects are a deliberate choice.'],
       ['arrows', 'Connections that stay useful', 'Reuse connections and keep headers, authentication, and scoped cookies in one client.'],
-      ['braces', 'Your data, your format', 'Send JSON, forms, or bytes. Read responses as text, structured JSON, or raw content.'],
+      ['braces', 'Your data, your format', 'Send JSON, forms, bytes, or multipart files. Read responses as text, structured JSON, or raw content.'],
       ['stream', 'Room for large responses', 'Read chunks as they arrive, with incremental gzip and deflate decoding.'],
     ],
     ready: 'Your first request starts here.',
-    readyText: 'Build from source, then follow the guide to link the native transport and run a Mojo program.',
-    install: 'Build from source', guide: 'Read the installation guide',
+    readyText: 'Install a published version with Pixi. The native transport loads automatically; no linker flags are needed.',
+    install: 'Install with Pixi', guide: 'Read the installation guide',
   },
   'zh-Hans': {
     title: '用 Mojo，', accent: '轻松发起 HTTP 请求。',
     description: '原生同步 HTTP 客户端。从简单的 GET，到持久会话和流式响应，用清晰的 API 连接你的应用与网络。',
     start: '快速开始', api: '查看 API',
-    caption: 'HTTP/1.1 · HTTPS 证书验证 · 原生 JSON',
+    caption: 'HTTP/1.1 + HTTP/2 · HTTPS 证书验证 · Multipart',
     tabs: ['第一个请求', '持久客户端', '流式响应'],
     why: '一个请求需要的，都在这里。',
     whyText: '小而清晰的 API，让请求、响应和资源管理各就其位。',
     features: [
       ['shield', '安全的默认值', '默认验证 TLS 证书，各阶段超时为五秒，重定向由你决定是否开启。'],
       ['arrows', '让连接持续发挥作用', '复用连接，在一个客户端中管理请求头、认证和有作用域的 Cookie。'],
-      ['braces', '按你的格式处理数据', '发送 JSON、表单或字节，读取文本、结构化 JSON 或原始响应内容。'],
+      ['braces', '按你的格式处理数据', '发送 JSON、表单、字节或 multipart 文件，读取文本、结构化 JSON 或原始响应内容。'],
       ['stream', '从容处理大响应', '按需分块读取响应体，增量解码 gzip 和 deflate。'],
     ],
     ready: '从第一个请求开始。',
-    readyText: '从源码构建，再跟随指南链接原生传输层，运行你的 Mojo 程序。',
-    install: '从源码构建', guide: '阅读安装指南',
+    readyText: '通过 Pixi 安装已发布版本，原生传输层自动加载，无需添加链接参数。',
+    install: '通过 Pixi 安装', guide: '阅读安装指南',
   },
 };
 
@@ -125,10 +125,8 @@ export default function Home() {
         <section className="req-get-started">
           <div className="container req-get-started__inner">
             <div><h2>{text.ready}</h2><p>{text.readyText}</p><Link to="/docs/getting-started">{text.guide} <span aria-hidden="true">→</span></Link></div>
-            <CodeBlock language="bash" title={text.install}>{`git clone https://github.com/mojoto/req.mojo.git
-cd req.mojo
-pixi install
-make build`}</CodeBlock>
+            <CodeBlock language="bash" title={text.install}>{`pixi workspace channel add --prepend https://repo.prefix.dev/modular-community
+pixi add req`}</CodeBlock>
           </div>
         </section>
       </main>

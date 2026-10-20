@@ -43,3 +43,31 @@ def main() raises:
 ## API 详情
 
 [Response](./api/response.md), [Client](./api/client.md)
+
+## 响应迭代器
+
+以下方法可在 Response 和响应上下文中使用：
+
+| 方法 | 返回内容 |
+| --- | --- |
+| `iter_bytes(chunk_size=65536)` | 解码后的字节块，包括 gzip/deflate 增量解码。 |
+| `iter_raw(chunk_size=65536)` | 原始内容编码字节，HTTP 传输帧已去除。 |
+| `iter_text(chunk_size=65536, encoding=None)` | 增量解码文本，块大小按 Unicode 字符计算。 |
+| `iter_lines(encoding=None)` | 去除换行符的行，识别 CR、LF、CRLF。 |
+
+字节和文本块大小必须为正数。文本支持 UTF-8、ASCII 和 Latin-1，
+优先使用显式编码，其次响应字符集，最后默认 UTF-8。
+已缓存响应可重复进行解码迭代，但不能用 `iter_raw()` 重建原始压缩字节。
+活动流开始消费后不能重启迭代器或混合 raw 与解码读取。
+`break` 不会自动关闭响应；使用上下文或显式 `close()`。
+
+```mojo
+import req
+
+
+def main() raises:
+    with req.stream("GET", "https://example.com") as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            print(line)
+```

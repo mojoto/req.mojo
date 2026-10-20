@@ -4,29 +4,36 @@ title: Introduction
 
 # Req.mojo
 
-Req is a native synchronous HTTP/1.1 client for Mojo. Its Mojo API uses libcurl
-through a small native transport bridge.
+Req is a native synchronous HTTP client for Mojo, using libcurl through a small
+native transport bridge.
 
-- HTTP and HTTPS with certificate verification.
-- Persistent connections and scoped cookies.
-- Query parameters, repeated headers, forms, JSON, and raw bytes.
-- Basic and Bearer authentication; separate connect, read, and write timeouts.
-- Explicit redirects, streaming responses, and incremental gzip/deflate decoding.
+- HTTP/1.1 and opt-in HTTP/2, with verified HTTPS.
+- Persistent connections, pool limits, and scoped cookies.
+- Query parameters, repeated headers, forms, JSON, bytes, and multipart uploads.
+- File uploads without whole-file buffering.
+- Basic/Bearer authentication and connect/read/write/pool timeouts.
+- Redirect history, prepared next requests, and response timing.
+- Streaming bytes, text, and lines, plus incremental gzip/deflate decoding.
+- Request/response hooks and injectable HTTP, mock, and custom transports.
 
-Start with [installation and a first request](./getting-started.md), then read
-about [persistent clients](./clients.md) and [streaming](./streaming.md).
-The [API reference](./api-reference.md) describes the public exports.
+Start with [installation](./getting-started.md), then
+[persistent clients](./clients.md), [HTTP/2 and proxies](./networking.md),
+and [streaming](./streaming.md). See [what changed in 0.2.0](./releases/0.2.0.md)
+and the [API reference](./api-reference.md).
 
 ## Defaults and scope
 
-TLS verification is enabled. Each timeout phase defaults to five seconds.
-Redirects and automatic retries are disabled; HTTP 4xx/5xx responses return
-normally until you call `raise_for_status()`.
+TLS verification is enabled. Connect, read, write, and pool timeouts each
+default to five seconds. Redirects, HTTP/2, and environment configuration
+(`trust_env`) are opt-in. HTTP 4xx/5xx returns normally until
+`raise_for_status()`.
 
-This version supports synchronous HTTP/1.1. Async, HTTP/2, multipart, proxies,
-and automatic retries are outside its scope. Clients are for single-threaded
-use. Cookie handling has no public-suffix database and supports IMF-fixdate
-Expires values. Local runtime validation covers macOS ARM64; Linux x86-64
-execution remains unverified.
+Clients are for single-threaded use. Async, HTTP/3, configurable application
+retries, and a total request deadline are not provided. Cookie handling has no
+public-suffix database and supports IMF-fixdate Expires values.
+
+CI runs tests, precompilation, and isolated consumer checks on Linux x86-64,
+Linux ARM64, and macOS ARM64. HTTP/2 requires a capable libcurl build;
+HTTP/2-only mode requires libcurl 8.10 or later.
 
 Req is [MIT licensed](https://github.com/mojoto/req.mojo/blob/main/LICENSE).

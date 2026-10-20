@@ -27,7 +27,7 @@ HTTP 4xx/5xx 默认是正常响应，调用 `raise_for_status()` 才抛错。传
 | --- | --- |
 | `InvalidURL`、`InvalidRequest` | URL、请求头、请求体、超时或配置无效。 |
 | `ConnectError`、`ReadError`、`WriteError` | 对应阶段传输失败。 |
-| `ConnectTimeout`、`ReadTimeout`、`WriteTimeout` | 对应阶段超时。 |
+| `ConnectTimeout`、`ReadTimeout`、`WriteTimeout`、`PoolTimeout` | 对应阶段超时。 |
 | `TLSError`、`ProtocolError` | TLS 验证/握手失败或 HTTP 协议错误。 |
 | `TooManyRedirects`、`UnsafeRedirect` | 超过重定向次数或 HTTPS 降级。 |
 | `HTTPStatusError` | 显式抛出的 HTTP 4xx/5xx 状态错误。 |
@@ -35,7 +35,8 @@ HTTP 4xx/5xx 默认是正常响应，调用 `raise_for_status()` 才抛错。传
 | `ClientClosed`、`StreamClosed` | 操作已关闭的客户端或流。 |
 | `StreamNotRead`、`StreamConsumed` | 缓冲前或分块消费后尝试访问整个响应体。 |
 
-Req 不自动重试请求。应用层重试时，应考虑请求操作和请求体是否能安全再次发送。
+Req 没有可配置的应用层重试策略。应用层重试时，应考虑请求操作和请求体是否能安全再次发送。
+原生后端可以进行协议层恢复，例如处理 HTTP/2 REFUSED_STREAM。
 
 ## API 详情
 

@@ -138,3 +138,7 @@ def write_to(self, mut writer: Some[Writer])
 # HTTPError
 def write_to(self, mut writer: Some[Writer])
 ```
+
+## `ErrorKind.PoolTimeout`
+
+Waiting for pool or HTTP/2 peer stream capacity exceeded `Timeout.pool`.

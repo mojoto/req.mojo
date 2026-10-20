@@ -32,6 +32,13 @@ def __init__(
     max_redirects: Int = 20,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
+    http1: Bool = True,
+    http2: Bool = False,
+    transport: Transport = Transport(),
+    event_hooks: EventHooks = EventHooks(),
 ) raises HTTPError
 ```
 
@@ -61,6 +68,8 @@ def build_request(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -118,6 +127,8 @@ def request(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -139,6 +150,8 @@ def stream(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -193,6 +206,8 @@ def post(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -203,7 +218,7 @@ def post(
 
 ## `put`
 
-The client version of `put()`. Send a PUT request, commonly used to replace a resource. Accepts the three body formats. Req sends exactly your selected method/body and does not implement an application-level replacement or retry policy. Applies client defaults through `build_request()` and inherits timeout/redirect settings unless overridden. Status and transport errors follow `Client.request()`.
+The client version of `put()`. Send a PUT request, commonly used to replace a resource. Accepts bytes, JSON, forms, streaming bodies, and multipart files. Req sends exactly your selected method/body and does not implement an application-level replacement or retry policy. Applies client defaults through `build_request()` and inherits timeout/redirect settings unless overridden. Status and transport errors follow `Client.request()`.
 
 ```text
 def put(
@@ -213,6 +228,8 @@ def put(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -233,6 +250,8 @@ def patch(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -253,6 +272,8 @@ def delete(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -273,6 +294,8 @@ def options(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Optional[Auth] = None,
@@ -328,3 +351,10 @@ The owned session jar. Server responses update it automatically; mutate it direc
 ```text
 cookies: CookieJar
 ```
+
+## Transport configuration and hooks
+
+`proxy`, `trust_env`, `http1`, and `http2` are described in [HTTP/2 and proxies](../networking.md).
+See [Limits](./limits.md) for pool settings and [uploads](./uploads.md) for `body` and `files`.
+`transport` replaces the built-in transport; see [transports](./transports.md).
+The public `event_hooks: EventHooks` field is described in [event hooks](./hooks.md).

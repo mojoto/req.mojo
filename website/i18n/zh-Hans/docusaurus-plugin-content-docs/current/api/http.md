@@ -8,9 +8,10 @@ title: HTTP 函数
 `auth` 默认为 `Auth.none()`，`timeout` 为每阶段五秒，`follow_redirects=False`，`verify=True`。
 `ca_file=None` 使用传输层默认信任库；指定 CA 文件时必须开启证书验证。
 
-支持请求体的方法只能提供 **一种**：`content: Optional[Bytes]` 是原始字节，
-`data: Optional[QueryParams]` 是 URL 编码表单，`json: Optional[JSONValue]` 是 JSON。
-未显式指定时会补充 JSON/表单的 Content-Type。模块级调用使用独立客户端；需要跨请求复用连接和 Cookie 时使用 [Client](./client.md)。所有网络操作都可能抛出 [HTTPError](./errors.md)。HTTP 4xx/5xx 默认正常返回，调用 `raise_for_status()` 才转为错误。
+请求体参数 `content`、`data`、`json`、`body` 相互排斥；`files` 只允许配合 `data`。
+具体用法见[上传](./uploads.md)。JSON/表单会自动补充 Content-Type。
+模块级调用使用独立客户端；复用连接、选择 HTTP/2 或使用钩子时，使用 [Client](./client.md)。
+HTTP 4xx/5xx 默认正常返回，调用 `raise_for_status()` 后才转为错误。
 
 ## 通用参数
 
@@ -23,12 +24,15 @@ title: HTTP 函数
 | `data` | 表单字段，编码为 `application/x-www-form-urlencoded`。 |
 | `json` | JSONValue，序列化为 `application/json`。 |
 | `auth` | Basic/Bearer 认证，默认不生成认证头；已有 Authorization 优先。 |
-| `timeout` | 连接、读取、写入三个阶段的超时，分别默认 5 秒。 |
+| `timeout` | 连接、读取、写入、连接池四个阶段的超时，分别默认 5 秒。 |
 | `follow_redirects` | 是否跟随重定向，默认 False。 |
 | `verify` | 是否验证 HTTPS 证书，默认 True。 |
 | `ca_file` | 自定义 CA 文件路径，默认使用传输层信任库。 |
+| `body`, `files` | [流式请求体与 multipart 上传](./uploads.md)。 |
+| `proxy`, `trust_env` | [代理与环境配置](../networking.md)，环境读取默认关闭。 |
+| `limits` | [连接池限制](./limits.md)。 |
 
-`get()` 和 `head()` 不接受 `content`、`data`、`json`。其余方法的具体签名见下文。
+`get()` 和 `head()` 不接受请求体参数，包括 `body` 和 `files`。其余方法的具体签名见下文。
 
 ## `request`
 
@@ -44,6 +48,8 @@ def request(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -51,6 +57,9 @@ def request(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -75,6 +84,9 @@ def get(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -99,6 +111,9 @@ def head(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -119,6 +134,8 @@ def post(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -126,6 +143,9 @@ def post(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -137,7 +157,7 @@ response.raise_for_status()
 
 ## `put`
 
-发送 PUT，常用于整体替换资源，支持三种请求体格式。Req 发送你指定的方法和请求体，不实现业务层替换逻辑或自动重试。 HTTP 状态与传输错误行为与 `request()` 一致。
+发送 PUT，常用于整体替换资源，支持字节、JSON、表单、流式请求体和 multipart 文件。Req 发送你指定的方法和请求体，不实现业务层替换逻辑或自动重试。 HTTP 状态与传输错误行为与 `request()` 一致。
 
 ```text
 def put(
@@ -146,6 +166,8 @@ def put(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -153,6 +175,9 @@ def put(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -173,6 +198,8 @@ def patch(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -180,6 +207,9 @@ def patch(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -200,6 +230,8 @@ def delete(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -207,6 +239,9 @@ def delete(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -227,6 +262,8 @@ def options(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -234,6 +271,9 @@ def options(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 
@@ -257,6 +297,8 @@ def stream(
     params: QueryParams = QueryParams(),
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
+    files: List[UploadFile] = List[UploadFile](),
     data: Optional[QueryParams] = None,
     json: Optional[JSONValue] = None,
     auth: Auth = Auth.none(),
@@ -264,6 +306,9 @@ def stream(
     follow_redirects: Bool = False,
     verify: Bool = True,
     ca_file: Optional[String] = None,
+    proxy: Optional[String] = None,
+    trust_env: Bool = False,
+    limits: Limits = Limits(),
 ) raises HTTPError -> Response
 ```
 

@@ -4,7 +4,7 @@ title: API Reference
 
 # API Reference
 
-Import the public API from `req`. Each page explains signatures, parameters, returned values, error conditions, and examples. Follow [Getting Started](./getting-started.md) for installation and native transport linking.
+Import the public API from `req`. Each page explains signatures, parameters, returned values, error conditions, and examples. Follow [Getting Started](./getting-started.md) for installation and automatic native transport loading.
 
 ## Choose an API for your task
 
@@ -17,7 +17,7 @@ Import the public API from `req`. Each page explains signatures, parameters, ret
 - [URL](./api/url.md) — Parse, inspect, transform, and resolve targets.
 - [JSONValue](./api/json.md) — Construct, parse, mutate, and read typed JSON values.
 - [Auth](./api/auth.md) — Generate Basic/Bearer headers and control inheritance.
-- [Timeout](./api/timeout.md) — Set independent connect/read/write deadlines.
+- [Timeout](./api/timeout.md) — Set independent connect/read/write/pool timeouts.
 - [CookieJar](./api/cookies.md) — Store scoped cookies and select or extract them.
 - [HTTPError and ErrorKind](./api/errors.md) — Understand individual error kinds and available context.
 - [Bytes and encode_utf8](./api/bytes.md) — Work with explicit byte-oriented content.
@@ -31,3 +31,11 @@ Complete examples include `import req` and a raising `def main()`. Short call sn
 1. Ordinary requests return buffered bodies; `stream()` returns after headers and requires a choice of whole-body or chunk consumption.
 2. HTTP 4xx/5xx returns normally; call `raise_for_status()` to require status success.
 3. Client and Response are movable owners. Manage closure through contexts and avoid implicit copies.
+
+## 0.2.0 extensions
+
+- [Limits](./api/limits.md) — Pool capacity and idle connection retention.
+- [RequestBody and UploadFile](./api/uploads.md) — Files, finite chunks, and multipart uploads.
+- [Event hooks](./api/hooks.md) — EventHooks, RequestHook, and ResponseHook.
+- [Transports and byte streams](./api/transports.md) — HTTPTransport, BaseTransport, Transport, MockTransport, SyncByteStream, and ByteStream.
+- [Response](./api/response.md) — Iterators, ResponseHistory, next_request, cookie snapshots, and elapsed().

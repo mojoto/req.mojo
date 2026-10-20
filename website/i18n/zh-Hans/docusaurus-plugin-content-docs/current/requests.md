@@ -83,7 +83,7 @@ def main() raises:
 
 `Auth.basic(username, password)` 创建 Basic 认证。单次客户端请求使用 `Auth.none()` 可禁用继承的认证。显式 Authorization 请求头优先于自动生成的认证头。
 
-`Timeout(seconds)` 设置三个阶段。值必须有限且大于零；`None` 禁用单个阶段，`Timeout.disabled()` 禁用所有阶段。这些配置是各阶段超时，并非整个请求的统一截止时间。
+`Timeout(seconds)` 设置连接、读取、写入和连接池四个阶段。值必须有限且大于零；`None` 禁用单个阶段，`Timeout.disabled()` 禁用所有阶段。这些配置是各阶段超时，并非整个请求的统一截止时间。
 
 ## 读取响应
 
@@ -98,3 +98,9 @@ def main() raises:
 - [Headers](./api/headers.md)、[QueryParams](./api/query-params.md)：重复值、查询和修改操作。
 - [JSONValue](./api/json.md)：对象、数组和各类型值的读写。
 - [Auth](./api/auth.md)、[Timeout](./api/timeout.md)：认证和阶段超时。
+
+## 上传与传输配置
+
+使用 `body=RequestBody.from_file(path)` 上传文件，或以 `files` 配合 `data` 发送 multipart。
+用法和参数互斥关系见[上传 API](./api/uploads.md)。
+代理和 HTTP/2 见[网络配置](./networking.md)，响应迭代器见[流式响应](./streaming.md)。
