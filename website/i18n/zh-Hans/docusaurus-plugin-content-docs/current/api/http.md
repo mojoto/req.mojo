@@ -29,7 +29,7 @@ HTTP 4xx/5xx 默认正常返回，调用 `raise_for_status()` 后才转为错误
 | `verify` | 是否验证 HTTPS 证书，默认 True。 |
 | `ca_file` | 自定义 CA 文件路径，默认使用传输层信任库。 |
 | `body`, `files` | [流式请求体与 multipart 上传](./uploads.md)。 |
-| `proxy`, `trust_env` | [代理与环境配置](../networking.md)，环境读取默认关闭。 |
+| `proxy`, `trust_env` | [代理与环境配置](../proxies.md)，环境读取默认关闭。 |
 | `limits` | [连接池限制](./limits.md)。 |
 
 `get()` 和 `head()` 不接受请求体参数，包括 `body` 和 `files`。其余方法的具体签名见下文。

@@ -4,9 +4,9 @@ module.exports = {
     {type: 'category', label: 'Getting Started', collapsed: false,
       items: ['intro', 'getting-started']},
     {type: 'category', label: 'Core Guides', collapsed: false,
-      items: ['requests', 'clients', 'streaming', 'networking', 'errors']},
+      items: ['requests', 'clients', 'streaming', 'http2', 'proxies', 'errors']},
     {type: 'category', label: 'Reference', collapsed: false,
       items: [{type: 'category', label: 'API Reference', collapsed: true,
-        items: ['api-reference', 'api/http', 'api/client', 'api/request', 'api/response', 'api/headers', 'api/query-params', 'api/url', 'api/json', 'api/auth', 'api/timeout', 'api/limits', 'api/uploads', 'api/hooks', 'api/transports', 'api/cookies', 'api/errors', 'api/bytes']}, 'releases/0.2.0', 'development']},
+        items: ['api-reference', 'api/http', 'api/client', 'api/request', 'api/response', 'api/headers', 'api/query-params', 'api/url', 'api/json', 'api/auth', 'api/timeout', 'api/limits', 'api/uploads', 'api/hooks', 'api/transports', 'api/cookies', 'api/errors', 'api/bytes']}, 'development']},
   ],
 };

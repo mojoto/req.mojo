@@ -32,7 +32,7 @@ HTTP 4xx/5xx returns normally until `raise_for_status()`.
 | `verify` | Whether to validate HTTPS certificates, True by default. |
 | `ca_file` | Custom CA file path, otherwise the transport trust store is used. |
 | `body`, `files` | [Streaming bodies and multipart uploads](./uploads.md). |
-| `proxy`, `trust_env` | [Proxy/environment routing](../networking.md); environment reads default off. |
+| `proxy`, `trust_env` | [Proxy/environment routing](../proxies.md); environment reads default off. |
 | `limits` | [Connection pool limits](./limits.md). |
 
 `get()` and `head()` have no body keywords, including `body` and `files`. Exact signatures follow below.

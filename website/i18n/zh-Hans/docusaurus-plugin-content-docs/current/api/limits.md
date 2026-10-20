@@ -47,4 +47,4 @@ def main() raises:
 超时抛出 `PoolTimeout`。消费完或关闭响应以释放容量。
 `validate()` 重新检查三个公开字段，无效值抛出 `InvalidRequest`。
 
-传输配置见 [HTTP/2 与代理](../networking.md)。
+流容量与连接复用见 [HTTP/2](../http2.md)。

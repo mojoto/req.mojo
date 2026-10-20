@@ -32,8 +32,6 @@ pixi workspace channel add --prepend https://repo.prefix.dev/modular-community
 pixi add req
 ```
 
-上述命令安装频道中已发布的版本。main 分支对应尚待发布的 0.2.0；
-该版本上架前，请按开发指南从源码构建。
 Req 使用 Mojo **1.1.0**。Pixi 会安装匹配的编译器、libcurl 和 zlib，
 以及 Req 的预编译模块、CPU JSON 模块和原生共享库。
 Req 自动从当前 Pixi 环境加载原生传输层，无需构建 C 库或添加链接参数。
@@ -83,5 +81,3 @@ hook 在每次提交前执行 `make format`。如果格式化修改了文件，�
 更多命令和文档开发说明见[开发指南](https://mojoto.github.io/req.mojo/zh-Hans/docs/development)。
 
 Req 使用 [MIT 许可证](LICENSE)。
-
-[0.2.0 版本说明](https://mojoto.github.io/req.mojo/zh-Hans/docs/releases/0.2.0) · [发布检查清单](RELEASING.md)

@@ -11,13 +11,17 @@ Import the public API from `req`. Each page explains signatures, parameters, ret
 - [HTTP Functions](./api/http.md) — Send requests and start streams.
 - [Client](./api/client.md) — Reuse connections, apply defaults, and prepare/send requests.
 - [Request](./api/request.md) — Represent and validate an outgoing request.
-- [Response](./api/response.md) — Inspect metadata, read bodies, handle status, and close streams.
+- [Response](./api/response.md) — Inspect metadata and redirect history, iterate bodies, handle status, and close streams.
 - [Headers](./api/headers.md) — Read, repeat, replace, and merge HTTP fields.
 - [QueryParams](./api/query-params.md) — Manage repeated parameters and query/form encoding.
 - [URL](./api/url.md) — Parse, inspect, transform, and resolve targets.
 - [JSONValue](./api/json.md) — Construct, parse, mutate, and read typed JSON values.
 - [Auth](./api/auth.md) — Generate Basic/Bearer headers and control inheritance.
 - [Timeout](./api/timeout.md) — Set independent connect/read/write/pool timeouts.
+- [Limits](./api/limits.md) — Pool capacity and idle connection retention.
+- [RequestBody and UploadFile](./api/uploads.md) — Files, finite chunks, and multipart uploads.
+- [Event hooks](./api/hooks.md) — EventHooks, RequestHook, and ResponseHook.
+- [Transports and byte streams](./api/transports.md) — HTTPTransport, BaseTransport, Transport, MockTransport, SyncByteStream, and ByteStream.
 - [CookieJar](./api/cookies.md) — Store scoped cookies and select or extract them.
 - [HTTPError and ErrorKind](./api/errors.md) — Understand individual error kinds and available context.
 - [Bytes and encode_utf8](./api/bytes.md) — Work with explicit byte-oriented content.
@@ -31,11 +35,3 @@ Complete examples include `import req` and a raising `def main()`. Short call sn
 1. Ordinary requests return buffered bodies; `stream()` returns after headers and requires a choice of whole-body or chunk consumption.
 2. HTTP 4xx/5xx returns normally; call `raise_for_status()` to require status success.
 3. Client and Response are movable owners. Manage closure through contexts and avoid implicit copies.
-
-## 0.2.0 extensions
-
-- [Limits](./api/limits.md) — Pool capacity and idle connection retention.
-- [RequestBody and UploadFile](./api/uploads.md) — Files, finite chunks, and multipart uploads.
-- [Event hooks](./api/hooks.md) — EventHooks, RequestHook, and ResponseHook.
-- [Transports and byte streams](./api/transports.md) — HTTPTransport, BaseTransport, Transport, MockTransport, SyncByteStream, and ByteStream.
-- [Response](./api/response.md) — Iterators, ResponseHistory, next_request, cookie snapshots, and elapsed().

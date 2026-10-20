@@ -74,6 +74,6 @@ TLS verification defaults to on. Use `ca_file="/path/to/ca.pem"` for a custom CA
 ## Pools, proxies, and hooks
 
 Configure pool [Limits](./api/limits.md) and capacity waits with `Timeout.pool`.
-See [HTTP/2 and proxies](./networking.md) for protocols, proxies, and opt-in environment routing.
+See [HTTP/2](./http2.md) for protocol selection and [proxies](./proxies.md) for routing and opt-in environment configuration.
 Use [event hooks](./api/hooks.md) around each exchange or [MockTransport](./api/transports.md) for tests.
 Responses expose redirect `history`, `next_request`, cookie snapshots, and `elapsed()`; see [Response](./api/response.md).

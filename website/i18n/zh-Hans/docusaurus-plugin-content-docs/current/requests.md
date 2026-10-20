@@ -103,4 +103,4 @@ def main() raises:
 
 使用 `body=RequestBody.from_file(path)` 上传文件，或以 `files` 配合 `data` 发送 multipart。
 用法和参数互斥关系见[上传 API](./api/uploads.md)。
-代理和 HTTP/2 见[网络配置](./networking.md)，响应迭代器见[流式响应](./streaming.md)。
+路由配置见[代理](./proxies.md)，协议选择见 [HTTP/2](./http2.md)，响应迭代器见[流式响应](./streaming.md)。

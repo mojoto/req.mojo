@@ -1,4 +1,4 @@
-"""Compile complete Mojo examples in both documentation locales."""
+"""Compile complete Mojo examples in documentation and release drafts."""
 
 import os
 from pathlib import Path
@@ -15,6 +15,7 @@ def main():
     examples = {}
     for directory in [
         ROOT / "website/docs",
+        ROOT / ".github/release-notes",
         ROOT / "website/i18n/zh-Hans/docusaurus-plugin-content-docs/current",
     ]:
         for path in sorted(directory.rglob("*.md")):

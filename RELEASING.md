@@ -1,4 +1,4 @@
-# Releasing Req 0.2.0
+# Releasing Req
 
 Preparation builds artifacts without publishing them. Do not create or push a
 tag, pass a `tag` workflow input, merge a community-channel update, or publish a
@@ -7,8 +7,9 @@ GitHub Release until the release is explicitly authorized.
 ## Prepare and validate
 
 1. Keep `pixi.toml`, website metadata, English/Chinese guides, API signatures,
-   and `website/docs/releases/0.2.0.md` aligned. Release notes describe installation,
-   runnable usage, defaults, and upgrade behavior.
+   and the release draft in `.github/release-notes/<version>.md` aligned.
+   Release notes describe installation, runnable usage, defaults, and upgrade
+   behavior; they are not pages in the user documentation site.
 2. Run `make test build test-package test-docs` and `make doc-build`.
    Complete documentation examples compile without contacting external sites.
 3. Push the preparation branch and open a draft PR. The test and package workflows
@@ -23,8 +24,8 @@ GitHub Release until the release is explicitly authorized.
    **without** a `tag` input. Never dispatch `pages.yml` for a preparation branch:
    its manual trigger deploys the website.
 6. Update `recipes/req` in `modular/modular-community` on a separate branch:
-   version 0.2.0, immutable source commit, Mojo 1.1.0, native dependencies,
-   description, and installed-consumer tests. Reuse the source package smoke
+   the release version, immutable source commit, pinned Mojo version, native
+   dependencies, description, and installed-consumer tests. Reuse the source package smoke
    test and its HTTP/TLS/HTTP/2/proxy fixtures instead of maintaining a smaller
    duplicate suite. Render the recipe for `linux-64`, `linux-aarch64`, and
    `osx-arm64`; build/test natively where available.
@@ -42,7 +43,7 @@ GitHub Release until the release is explicitly authorized.
    the prepared English notes. It does not use generated commit lists as notes.
 3. Merge the reviewed community recipe when publication is authorized. Verify
    real installation in fresh workspaces on all three platforms, including
-   `pixi add "req==0.2.0"`, `mojo run`, and compiled execution with automatic
+   `pixi add "req==<version>"`, `mojo run`, and compiled execution with automatic
    native loading. HTTP/2 requires a capable libcurl; HTTP/2-only mode requires
    libcurl 8.10 or later.
 4. Verify GitHub assets and `SHA256SUMS`, the public channel version, and deployed

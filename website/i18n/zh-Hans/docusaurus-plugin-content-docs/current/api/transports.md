@@ -28,7 +28,7 @@ def close(mut self)
 def is_closed(self) -> Bool
 ```
 
-配置方法见 [HTTP/2 与代理](../networking.md)。
+协议选择见 [HTTP/2](../http2.md)，路由配置见[代理](../proxies.md)。
 显式关闭传输层会取消活动流；销毁持有者时，响应独立保留的连接池仍然有效。
 
 ## MockTransport

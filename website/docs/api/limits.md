@@ -48,4 +48,4 @@ Waiting for pool capacity, including an HTTP/2 peer's stream limit, uses
 responses to release capacity. `validate()` rechecks the three public fields
 and raises `InvalidRequest` for invalid values.
 
-See [HTTP/2 and proxies](../networking.md) for transport configuration.
+See [HTTP/2](../http2.md) for stream capacity and connection reuse.

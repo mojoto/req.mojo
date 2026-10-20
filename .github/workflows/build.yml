@@ -75,7 +75,7 @@ jobs:
           [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
           manifest_version=$(pixi run python -c 'import tomllib; print(tomllib.load(open("pixi.toml", "rb"))["workspace"]["version"])')
           [[ "${version}" == "${manifest_version}" ]]
-          test -s "website/docs/releases/${version}.md"
+          test -s ".github/release-notes/${version}.md"
           mojo_version=$(pixi run python -c 'import tomllib; print(tomllib.load(open("pixi.toml", "rb"))["dependencies"]["mojo"].removeprefix("=="))')
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "mojo_version=${mojo_version}" >> "${GITHUB_OUTPUT}"
@@ -167,9 +167,8 @@ jobs:
             gh release upload "${RELEASE_TAG}" release-assets/* --clobber
           else
             version="${RELEASE_TAG#v}"
-            sed '1,4d' "website/docs/releases/${version}.md" > release-notes.md
             gh release create "${RELEASE_TAG}" release-assets/* \
               --verify-tag \
-              --notes-file release-notes.md \
+              --notes-file ".github/release-notes/${version}.md" \
               --title "Req ${RELEASE_TAG}"
           fi

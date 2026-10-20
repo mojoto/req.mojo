@@ -17,9 +17,9 @@ native transport bridge.
 - Request/response hooks and injectable HTTP, mock, and custom transports.
 
 Start with [installation](./getting-started.md), then
-[persistent clients](./clients.md), [HTTP/2 and proxies](./networking.md),
-and [streaming](./streaming.md). See [what changed in 0.2.0](./releases/0.2.0.md)
-and the [API reference](./api-reference.md).
+[persistent clients](./clients.md), [HTTP/2](./http2.md), [proxies](./proxies.md),
+and [streaming](./streaming.md). The [API reference](./api-reference.md) describes
+the public types and methods.
 
 ## Defaults and scope
 

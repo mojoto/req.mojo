@@ -58,8 +58,3 @@ make doc-clean
 `doc-install` 使用提交的 npm 锁文件。`doc-start` 启动开发服务器；中文开发使用 `npm --prefix website start -- --locale zh-Hans`。`doc-build` 构建两种语言，把断链视为错误。`doc-serve` 预览生产构建。`doc-clean` 清理 Docusaurus 生成状态和网站构建目录。
 
 Pages 工作流校验文档 PR。`main` 上的网站变更由独立发布任务部署两种语言至 GitHub Pages。仓库 Pages 来源需设置为 **GitHub Actions**。
-
-## 0.2.0 发布准备
-
-正式发布步骤见仓库 [RELEASING.md](https://github.com/mojoto/req.mojo/blob/main/RELEASING.md)。
-准备阶段只构建和验收产物，不创建 tag、不上传正式 Release，也不合并社区上架变更。
