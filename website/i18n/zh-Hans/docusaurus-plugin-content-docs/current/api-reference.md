@@ -4,7 +4,7 @@ title: API 参考
 
 # API 参考
 
-从 `req` 导入公开 API。每个页面给出具体签名、参数含义、返回行为、错误条件与示例。先阅读 [快速开始](./getting-started.md) 完成安装和原生传输链接。
+从 `req` 导入公开 API。每个页面给出具体签名、参数含义、返回行为、错误条件与示例。先阅读 [快速开始](./getting-started.md) 完成安装和原生传输自动加载。
 
 ## 从任务选择 API
 
@@ -17,7 +17,7 @@ title: API 参考
 - [URL](./api/url.md) — 解析、检查、转换和解析目标引用。
 - [JSONValue](./api/json.md) — 构造、解析、修改和读取有类型的 JSON。
 - [Auth](./api/auth.md) — 生成 Basic/Bearer 请求头并控制继承。
-- [Timeout](./api/timeout.md) — 配置独立的连接/读取/写入超时。
+- [Timeout](./api/timeout.md) — 配置独立的连接/读取/写入/连接池超时。
 - [CookieJar](./api/cookies.md) — 存储有作用域的 Cookie，并选择或提取它们。
 - [HTTPError 与 ErrorKind](./api/errors.md) — 了解每种错误类型和可用上下文。
 - [Bytes 与 encode_utf8](./api/bytes.md) — 处理显式字节内容。
@@ -31,3 +31,11 @@ title: API 参考
 1. 普通请求返回已缓冲响应；`stream()` 收到响应头后返回，需选择整包或分块消费。
 2. HTTP 4xx/5xx 默认正常返回；需要状态错误时调用 `raise_for_status()`。
 3. Client 与 Response 是可移动资源持有者，用上下文管理关闭，不要隐式复制。
+
+## 0.2.0 扩展
+
+- [Limits](./api/limits.md) — 连接池容量与空闲连接回收。
+- [RequestBody 与 UploadFile](./api/uploads.md) — 文件、字节块和 multipart 上传。
+- [事件钩子](./api/hooks.md) — EventHooks、RequestHook、ResponseHook。
+- [传输层与字节流](./api/transports.md) — HTTPTransport、BaseTransport、Transport、MockTransport、SyncByteStream、ByteStream。
+- [Response](./api/response.md) — 迭代器、ResponseHistory、next_request、Cookie 快照与 elapsed()。

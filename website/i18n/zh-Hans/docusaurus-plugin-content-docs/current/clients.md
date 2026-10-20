@@ -50,3 +50,11 @@ jar 没有公共后缀数据库，不是浏览器 Cookie 策略引擎。
 ## API 详情
 
 [Client](./api/client.md), [CookieJar](./api/cookies.md), [URL](./api/url.md)
+
+## 连接池、代理与钩子
+
+通过 [Limits](./api/limits.md) 配置连接池，`Timeout.pool` 限制容量等待时间。
+通过 [HTTP/2 与代理](./networking.md) 配置协议、显式代理与可选环境读取。
+[事件钩子](./api/hooks.md) 用于每次交换前后的处理，
+[MockTransport](./api/transports.md) 可替换网络实现用于测试。
+响应还提供重定向 `history`、`next_request`、Cookie 快照与 `elapsed()`；见 [Response](./api/response.md)。

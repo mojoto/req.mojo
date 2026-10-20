@@ -30,7 +30,7 @@ def test_http2_read_timeout_before_headers_preserves_connection() raises:
     var previous = client.get("/echo").headers["X-Connection"]
     var caught = False
     try:
-        _ = client.get("/slow-headers", timeout=Timeout(read=0.05))
+        _ = client.get("/stall-headers", timeout=Timeout(read=0.05))
     except error:
         assert_equal(error.kind, ErrorKind.ReadTimeout)
         caught = True
@@ -40,7 +40,7 @@ def test_http2_read_timeout_before_headers_preserves_connection() raises:
 
 def test_http2_read_timeout_during_body_preserves_other_streams() raises:
     var client = _client(Limits(max_connections=1))
-    var slow = client.stream("GET", "/slow-body", timeout=Timeout(read=0.05))
+    var slow = client.stream("GET", "/stall-body", timeout=Timeout(read=0.05))
     var healthy = client.stream("GET", "/bytes")
     assert_equal(slow.headers["X-Connection"], healthy.headers["X-Connection"])
     assert_equal(slow.read_chunk(4).value(), encode_utf8("part"))

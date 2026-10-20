@@ -73,12 +73,15 @@ jobs:
             version=$(pixi run python -c 'import tomllib; print(tomllib.load(open("pixi.toml", "rb"))["workspace"]["version"])')
           fi
           [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+          manifest_version=$(pixi run python -c 'import tomllib; print(tomllib.load(open("pixi.toml", "rb"))["workspace"]["version"])')
+          [[ "${version}" == "${manifest_version}" ]]
+          test -s "website/docs/releases/${version}.md"
           mojo_version=$(pixi run python -c 'import tomllib; print(tomllib.load(open("pixi.toml", "rb"))["dependencies"]["mojo"].removeprefix("=="))')
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "mojo_version=${mojo_version}" >> "${GITHUB_OUTPUT}"
 
       - name: Test and precompile package
-        run: make test build test-package
+        run: make test build test-package test-docs
 
       - name: Create release archive
         shell: bash
@@ -108,14 +111,10 @@ jobs:
           path: build/dist/*.tar.gz
           if-no-files-found: error
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+  bundle:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      contents: write
-
     steps:
       - name: Download release archives
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -126,7 +125,36 @@ jobs:
 
       - name: Generate checksums
         working-directory: release-assets
-        run: sha256sum *.tar.gz > SHA256SUMS
+        run: |
+          sha256sum *.tar.gz > SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Upload validated release bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-bundle
+          path: release-assets/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    needs: bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: Download validated release bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: release-bundle
+          path: release-assets
 
       - name: Create or update GitHub release
         env:
@@ -138,8 +166,10 @@ jobs:
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             gh release upload "${RELEASE_TAG}" release-assets/* --clobber
           else
+            version="${RELEASE_TAG#v}"
+            sed '1,4d' "website/docs/releases/${version}.md" > release-notes.md
             gh release create "${RELEASE_TAG}" release-assets/* \
               --verify-tag \
-              --generate-notes \
+              --notes-file release-notes.md \
               --title "Req ${RELEASE_TAG}"
           fi

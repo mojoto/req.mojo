@@ -33,6 +33,7 @@ def __init__(
     *,
     headers: Headers = Headers(),
     content: Optional[Bytes] = None,
+    body: Optional[RequestBody] = None,
 ) raises HTTPError
 
 def __init__(out self, *, copy: Self)
@@ -52,11 +53,17 @@ def validate(self) raises HTTPError
 
 ## Fields
 
-The outgoing method, target URL, header mapping, and optional raw body. These are request data, not session configuration. Request is implicitly copyable and owns its body data; modifications to one Request do not change already returned Responses.
+The outgoing method, target URL, header mapping, and optional raw body. These are request data, not session configuration. Request is implicitly copyable; raw content is owned and RequestBody sources are shared; modifications to one Request do not change already returned Responses.
 
 ```text
 method: String
 url: URL
 headers: Headers
 content: Optional[Bytes]
+body: Optional[RequestBody]
 ```
+
+`body` accepts a [RequestBody](./uploads.md) and cannot be combined with `content`.
+RequestBody aliases share their source and one-shot consumption state.
+Content-Length must match known-length bodies; the transport chooses framing
+for unknown-length bodies.

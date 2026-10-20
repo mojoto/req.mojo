@@ -75,6 +75,8 @@ class HTTP2Handler(BaseRequestHandler):
                 wire.extend(frame.serialize())  # Missing mandatory :status.
                 later(disconnect)
                 return
+            if mode == "/stall-headers":
+                return  # Wait for cancellation without racing a scheduled reply.
             if mode == "/slow-headers":
                 request["headers"][":path"] = "/echo"
                 later(lambda: reply(stream, request))
@@ -105,7 +107,7 @@ class HTTP2Handler(BaseRequestHandler):
             elif mode == "/informational":
                 connection.send_headers(stream, [(":status", "103"), ("link", "</early>")])
                 body = b"final response"
-            elif mode in ("/reset-body", "/goaway-body", "/eof-body", "/slow-body", "/bad-length"):
+            elif mode in ("/reset-body", "/goaway-body", "/eof-body", "/slow-body", "/stall-body", "/bad-length"):
                 body = b"part"
             else:
                 body = json.dumps({"method": method, "headers": request["headers"],
@@ -114,7 +116,7 @@ class HTTP2Handler(BaseRequestHandler):
                                    "window_updates": request["window_updates"],
                                    "connection": self.client_address[1], "stream": stream}).encode()
                 headers.append(("content-type", "application/json"))
-            length = 8 if mode in ("/reset-body", "/goaway-body", "/eof-body", "/slow-body", "/bad-length") else len(body)
+            length = 8 if mode in ("/reset-body", "/goaway-body", "/eof-body", "/slow-body", "/stall-body", "/bad-length") else len(body)
             connection.send_headers(stream, [(":status", str(status)),
                                             ("content-length", str(length)),
                                             ("x-connection", str(self.client_address[1])),
@@ -122,7 +124,7 @@ class HTTP2Handler(BaseRequestHandler):
                                     end_stream=method == "HEAD" or not body)
             if method == "HEAD" or not body:
                 return
-            if mode in ("/reset-body", "/goaway-body", "/eof-body", "/slow-body"):
+            if mode in ("/reset-body", "/goaway-body", "/eof-body", "/slow-body", "/stall-body"):
                 connection.send_data(stream, body)
                 if mode == "/reset-body":
                     later(lambda: connection.reset_stream(stream, error_code=2))
@@ -130,7 +132,7 @@ class HTTP2Handler(BaseRequestHandler):
                     later(lambda: goaway(0, 2))
                 elif mode == "/eof-body":
                     later(disconnect)
-                else:
+                elif mode == "/slow-body":
                     later(lambda: connection.send_data(stream, b"rest", end_stream=True))
             elif mode == "/settings-increase":
                 # Leave the response open without a paused DATA backlog so

@@ -30,7 +30,7 @@ does not guarantee that a streamed body can be read completely.
 | --- | --- |
 | `InvalidURL`, `InvalidRequest` | Invalid URL, headers, body, timeout, or configuration. |
 | `ConnectError`, `ReadError`, `WriteError` | Transport failure in the corresponding phase. |
-| `ConnectTimeout`, `ReadTimeout`, `WriteTimeout` | Phase timeout. |
+| `ConnectTimeout`, `ReadTimeout`, `WriteTimeout`, `PoolTimeout` | Phase timeout. |
 | `TLSError`, `ProtocolError` | TLS verification/handshake or HTTP protocol failure. |
 | `TooManyRedirects`, `UnsafeRedirect` | Redirect limit or HTTPS downgrade. |
 | `HTTPStatusError` | Explicitly raised HTTP 4xx/5xx. |
@@ -38,8 +38,9 @@ does not guarantee that a streamed body can be read completely.
 | `ClientClosed`, `StreamClosed` | Operation on a closed client or stream. |
 | `StreamNotRead`, `StreamConsumed` | Whole-body access before buffering or after chunk consumption. |
 
-Req does not automatically retry requests. If your application retries, consider
-whether the operation and request body can safely be sent again.
+Req exposes no configurable application retry policy. If your application
+retries, consider whether the operation and request body can safely be sent again.
+The native backend can perform protocol-level recovery, such as HTTP/2 REFUSED_STREAM.
 
 ## API details
 

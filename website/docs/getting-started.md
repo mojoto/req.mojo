@@ -17,9 +17,9 @@ pixi workspace channel add --prepend https://repo.prefix.dev/modular-community
 pixi add req
 ```
 
-The community recipe is being submitted for review; these commands become
-available once the package is published to the channel.
-Req 0.1.0 uses Mojo **1.1.0**. Pixi installs the matching compiler, libcurl,
+These commands install a published channel version. This documentation describes
+0.2.0; until that version is published, use the [source build](./development.md).
+Req 0.2.0 uses Mojo **1.1.0**. Pixi installs the matching compiler, libcurl,
 and zlib, together with Req's precompiled module, CPU JSON modules, and native
 shared library. Req loads the native transport from the active Pixi environment
 automatically; no C build or extra linker flags are needed.

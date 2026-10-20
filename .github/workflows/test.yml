@@ -2,14 +2,8 @@ name: Run Tests
 
 on:
   pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "website/**"
   push:
     branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "website/**"
   workflow_dispatch:
 
 permissions:
@@ -58,6 +52,9 @@ jobs:
 
       - name: Verify isolated package consumers
         run: make test-package
+
+      - name: Compile documentation examples
+        run: make test-docs
 
       - name: Upload test results
         if: always()

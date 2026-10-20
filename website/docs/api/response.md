@@ -37,7 +37,7 @@ def __init__(
     status_code: Int,
     *,
     request: Request,
-    headers: Headers = Headers(),
+    var headers: Headers = Headers(),
     content: Bytes = Bytes(),
     reason_phrase: String = "",
     http_version: String = "HTTP/1.1",
@@ -46,7 +46,7 @@ def __init__(
 
 ## `from_stream`
 
-Create an unbuffered Response from a transport CurlStream, parsing its status line and headers and taking ownership of the stream. `request` supplies request context. Invalid response framing raises `ProtocolError`; unsupported Content-Encoding raises `DecodeError`.
+Create an unbuffered Response from a transport CurlStream, parsing its status line and headers and taking ownership of the stream. `request` supplies request context. Invalid response framing raises `ProtocolError`; content decoding errors surface when decoded bytes are read.
 
 This is a transport integration hook. CurlStream lives in an internal module; applications obtain streamed responses through `req.stream()` or `Client.stream()`.
 
@@ -211,3 +211,33 @@ with req.stream("GET", "https://example.com") as body:
     _ = body.read()
     print(body.text())
 ```
+
+## Iterators and custom streams
+
+`iter_bytes(chunk_size=65536)`, `iter_raw(chunk_size=65536)`,
+`iter_text(chunk_size=65536, encoding=None)`, and `iter_lines(encoding=None)`
+are described in [streaming](../streaming.md).
+Construct a response from a public ByteStream with `Response.from_byte_stream(...)`;
+see [transports and streams](./transports.md) for its signature.
+
+## Redirects, cookies, and timing
+
+```text
+history: ResponseHistory
+next_request: Optional[Request]
+cookies: CookieJar
+
+def elapsed(self) raises HTTPError -> Float64
+```
+
+`history` retains intermediate redirect responses in order and supports `len()`,
+indexing (including negative indexes), and iteration. Entries are read and
+closed, with their cached bodies and metadata still accessible.
+For an unfollowed redirect, `next_request` contains the prepared next request
+for manual `Client.send()`. Inspect its URL before sending: the automatic
+HTTPS-downgrade guard applies when following redirects, not to an independent
+manual request. Body replay restrictions still apply. `cookies` snapshots this response's Set-Cookie values rather
+than the client's accumulated jar.
+`elapsed()` returns seconds from sending until fully reading or closing. It
+raises `StreamNotRead` before completion or for an unbound manually constructed
+response. Response contexts expose these fields and methods too.

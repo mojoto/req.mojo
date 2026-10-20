@@ -18,8 +18,8 @@ def main() raises:
 
 ## `Timeout()`
 
-Configure independent phase timeouts in seconds. Timeout() sets connect/read/write to 5.0.
-Timeout(seconds) sets the same positive finite Float64 for all three.
+Configure independent phase timeouts in seconds. Timeout() sets connect/read/write/pool to 5.0.
+Timeout(seconds) sets the same positive finite Float64 for all four.
 The keyword constructor sets phases independently; each accepts Optional[Float64]
 and None disables just that phase. Zero, negative, NaN, and infinity raise
 InvalidRequest. These are phase timeouts, not a total wall-clock deadline for
@@ -36,12 +36,13 @@ def __init__(
     connect: Optional[Float64] = 5.0,
     imm read: Optional[Float64] = 5.0,
     imm write: Optional[Float64] = 5.0,
+    pool: Optional[Float64] = 5.0,
 ) raises HTTPError
 ```
 
 ## `disabled`
 
-Return a Timeout with connect, read, and write all set to None. Use it only when your application has a suitable alternative cancellation policy; a stalled operation has no configured phase deadline.
+Return a Timeout with connect, read, write, and pool all set to None. Use it only when your application has a suitable alternative cancellation policy; a stalled operation has no configured phase deadline.
 
 ```text
 def disabled() -> Self
@@ -49,7 +50,7 @@ def disabled() -> Self
 
 ## `validate`
 
-Recheck the three public fields after modification. Each must be None or a finite positive Float64. Returns no value; invalid values raise InvalidRequest. Clients call this when configuring and sending, so mutation does not bypass timeout checks.
+Recheck the four public fields after modification. Each must be None or a finite positive Float64. Returns no value; invalid values raise InvalidRequest. Clients call this when configuring and sending, so mutation does not bypass timeout checks.
 
 ```text
 def validate(self) raises HTTPError
@@ -63,4 +64,7 @@ connect bounds connection establishment, read bounds waiting for response data, 
 connect: Optional[Float64]
 read: Optional[Float64]
 write: Optional[Float64]
+pool: Optional[Float64]
 ```
+
+`pool` limits waits for connection or HTTP/2 stream capacity and raises `PoolTimeout`; see [Limits](./limits.md).

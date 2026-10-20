@@ -138,3 +138,7 @@ def write_to(self, mut writer: Some[Writer])
 # HTTPError
 def write_to(self, mut writer: Some[Writer])
 ```
+
+## `ErrorKind.PoolTimeout`
+
+等待连接池或 HTTP/2 对端流容量超过 `Timeout.pool`。

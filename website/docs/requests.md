@@ -92,8 +92,8 @@ def main() raises:
 disables inherited authentication on an individual client request. An explicit
 Authorization header takes precedence over generated authentication.
 
-`Timeout(seconds)` sets all three phases. Values must be finite and positive;
-`None` disables a phase and `Timeout.disabled()` disables all three. These are
+`Timeout(seconds)` sets all four phases. Values must be finite and positive;
+`None` disables a phase and `Timeout.disabled()` disables all four. These are
 phase timeouts, rather than one overall request deadline.
 
 ## Read a response
@@ -114,3 +114,9 @@ for typed failures.
 - [Headers](./api/headers.md) and [QueryParams](./api/query-params.md): repeated values, lookup, and mutation.
 - [JSONValue](./api/json.md): objects, arrays, and typed value access.
 - [Auth](./api/auth.md) and [Timeout](./api/timeout.md): authentication and phase timeouts.
+
+## Uploads and transport configuration
+
+Use `body=RequestBody.from_file(path)` for file uploads, or `files` with `data` for multipart.
+See [uploads](./api/uploads.md) for examples and mutually exclusive body parameters.
+See [network configuration](./networking.md) for proxies/HTTP/2 and [streaming](./streaming.md) for iterators.

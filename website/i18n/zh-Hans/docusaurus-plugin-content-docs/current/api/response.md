@@ -33,7 +33,7 @@ def __init__(
     status_code: Int,
     *,
     request: Request,
-    headers: Headers = Headers(),
+    var headers: Headers = Headers(),
     content: Bytes = Bytes(),
     reason_phrase: String = "",
     http_version: String = "HTTP/1.1",
@@ -42,7 +42,7 @@ def __init__(
 
 ## `from_stream`
 
-从传输层的 CurlStream 创建未缓冲 Response，解析状态行和响应头，并接管流的所有权。`request` 提供请求上下文。格式错误抛出 `ProtocolError`；不支持的 Content-Encoding 抛出 `DecodeError`。
+从传输层的 CurlStream 创建未缓冲 Response，解析状态行和响应头，并接管流的所有权。`request` 提供请求上下文。格式错误抛出 `ProtocolError`；内容解码错误在读取解码字节时抛出。
 
 这是传输层集成入口，`CurlStream` 位于内部模块；普通应用通过 `req.stream()` 或 `Client.stream()` 创建流式响应。
 
@@ -207,3 +207,30 @@ with req.stream("GET", "https://example.com") as body:
     _ = body.read()
     print(body.text())
 ```
+
+## 迭代器与自定义流
+
+`iter_bytes(chunk_size=65536)`、`iter_raw(chunk_size=65536)`、
+`iter_text(chunk_size=65536, encoding=None)`、`iter_lines(encoding=None)`
+见[流式响应](../streaming.md)。
+通过 `Response.from_byte_stream(...)` 从公开 ByteStream 创建响应，
+签名见[传输层与字节流](./transports.md)。
+
+## 重定向、Cookie 与计时
+
+```text
+history: ResponseHistory
+next_request: Optional[Request]
+cookies: CookieJar
+
+def elapsed(self) raises HTTPError -> Float64
+```
+
+`history` 按顺序保留重定向中间响应，支持 `len()`、索引（包括负索引）和迭代。
+历史响应已读完并关闭，其正文和元数据仍可访问。
+未跟随重定向时，`next_request` 提供已准备的下一跳请求，可通过 `Client.send()` 手动发送；
+手动发送前应检查 URL：自动 HTTPS 降级保护适用于跟随重定向，不适用于独立手动请求。
+请求体重放限制仍然生效。
+`cookies` 是该响应 Set-Cookie 的独立快照，与客户端累计 Cookie 不同。
+`elapsed()` 返回从发送到响应读完或关闭的秒数；在完成之前或手工构造的未计时响应上调用，
+会抛出 `StreamNotRead`。响应上下文也公开这些字段和方法。
