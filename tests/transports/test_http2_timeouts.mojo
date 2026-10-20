@@ -30,7 +30,7 @@ def test_http2_read_timeout_before_headers_preserves_connection() raises:
     var previous = client.get("/echo").headers["X-Connection"]
     var caught = False
     try:
-        _ = client.get("/slow-headers", timeout=Timeout(read=0.05))
+        _ = client.get("/stall-headers", timeout=Timeout(read=0.05))
     except error:
         assert_equal(error.kind, ErrorKind.ReadTimeout)
         caught = True

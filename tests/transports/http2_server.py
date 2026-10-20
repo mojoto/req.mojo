@@ -75,6 +75,8 @@ class HTTP2Handler(BaseRequestHandler):
                 wire.extend(frame.serialize())  # Missing mandatory :status.
                 later(disconnect)
                 return
+            if mode == "/stall-headers":
+                return  # Wait for cancellation without racing a scheduled reply.
             if mode == "/slow-headers":
                 request["headers"][":path"] = "/echo"
                 later(lambda: reply(stream, request))
