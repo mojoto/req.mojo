@@ -16,9 +16,7 @@ pixi workspace channel add --prepend https://repo.prefix.dev/modular-community
 pixi add req
 ```
 
-上述命令安装频道中已发布的版本。本文档对应 0.2.0；该版本上架前，
-请使用[源码构建](./development.md)。
-Req 0.2.0 使用 Mojo **1.1.0**。Pixi 会安装匹配的编译器、libcurl 和 zlib，
+Req 使用 Mojo **1.1.0**。Pixi 会安装匹配的编译器、libcurl 和 zlib，
 以及 Req 的预编译模块、CPU JSON 模块和原生共享库。
 Req 自动从当前 Pixi 环境加载原生传输层，无需构建 C 库或添加链接参数。
 

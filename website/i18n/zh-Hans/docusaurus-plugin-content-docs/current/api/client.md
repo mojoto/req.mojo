@@ -336,7 +336,8 @@ cookies: CookieJar
 
 ## 传输配置与钩子
 
-`proxy`、`trust_env`、`http1`、`http2` 见 [HTTP/2 与代理](../networking.md)。
+`http1` 和 `http2` 用于 [HTTP 协议选择](../http2.md)。
+`proxy` 和 `trust_env` 用于[代理路由](../proxies.md)。
 `limits` 见 [Limits](./limits.md)，`body`、`files` 见[上传](./uploads.md)。
 `transport` 替换默认传输实现；配置见[传输层](./transports.md)。
 `event_hooks: EventHooks` 是公开字段，用法见[事件钩子](./hooks.md)。

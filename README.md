@@ -33,8 +33,6 @@ pixi workspace channel add --prepend https://repo.prefix.dev/modular-community
 pixi add req
 ```
 
-These commands install the published channel version. The main branch targets
-0.2.0; until it is published, use the source build in the development guide.
 Req uses Mojo **1.1.0**. Pixi installs the matching compiler, libcurl,
 and zlib, together with Req's precompiled module, CPU JSON modules, and native
 shared library. Req loads the native transport from the active Pixi environment
@@ -88,5 +86,3 @@ See the [development guide](https://mojoto.github.io/req.mojo/docs/development)
 for more commands and documentation setup.
 
 Req is [MIT licensed](LICENSE).
-
-[0.2.0 release notes](https://mojoto.github.io/req.mojo/docs/releases/0.2.0) · [Release checklist](RELEASING.md)

@@ -29,7 +29,7 @@ def close(mut self)
 def is_closed(self) -> Bool
 ```
 
-See [HTTP/2 and proxies](../networking.md). Closing the transport cancels active
+See [HTTP/2](../http2.md) for protocol selection and [proxies](../proxies.md) for routing. Closing the transport cancels active
 streams; destroying its owner leaves independently retained response pools alive.
 
 ## MockTransport

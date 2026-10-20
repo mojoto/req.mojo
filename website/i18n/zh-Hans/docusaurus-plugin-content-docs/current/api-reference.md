@@ -11,13 +11,17 @@ title: API 参考
 - [HTTP 函数](./api/http.md) — 发送请求和创建响应流。
 - [Client](./api/client.md) — 复用连接、应用默认值并准备/发送请求。
 - [Request](./api/request.md) — 表示和校验待发送请求。
-- [Response](./api/response.md) — 检查元数据、读取响应体、处理状态和关闭流。
+- [Response](./api/response.md) — 检查元数据与重定向历史、迭代响应体、处理状态和关闭流。
 - [Headers](./api/headers.md) — 读取、重复、替换和合并 HTTP 字段。
 - [QueryParams](./api/query-params.md) — 管理重复参数和查询/表单编码。
 - [URL](./api/url.md) — 解析、检查、转换和解析目标引用。
 - [JSONValue](./api/json.md) — 构造、解析、修改和读取有类型的 JSON。
 - [Auth](./api/auth.md) — 生成 Basic/Bearer 请求头并控制继承。
 - [Timeout](./api/timeout.md) — 配置独立的连接/读取/写入/连接池超时。
+- [Limits](./api/limits.md) — 连接池容量与空闲连接回收。
+- [RequestBody 与 UploadFile](./api/uploads.md) — 文件、字节块和 multipart 上传。
+- [事件钩子](./api/hooks.md) — EventHooks、RequestHook、ResponseHook。
+- [传输层与字节流](./api/transports.md) — HTTPTransport、BaseTransport、Transport、MockTransport、SyncByteStream、ByteStream。
 - [CookieJar](./api/cookies.md) — 存储有作用域的 Cookie，并选择或提取它们。
 - [HTTPError 与 ErrorKind](./api/errors.md) — 了解每种错误类型和可用上下文。
 - [Bytes 与 encode_utf8](./api/bytes.md) — 处理显式字节内容。
@@ -31,11 +35,3 @@ title: API 参考
 1. 普通请求返回已缓冲响应；`stream()` 收到响应头后返回，需选择整包或分块消费。
 2. HTTP 4xx/5xx 默认正常返回；需要状态错误时调用 `raise_for_status()`。
 3. Client 与 Response 是可移动资源持有者，用上下文管理关闭，不要隐式复制。
-
-## 0.2.0 扩展
-
-- [Limits](./api/limits.md) — 连接池容量与空闲连接回收。
-- [RequestBody 与 UploadFile](./api/uploads.md) — 文件、字节块和 multipart 上传。
-- [事件钩子](./api/hooks.md) — EventHooks、RequestHook、ResponseHook。
-- [传输层与字节流](./api/transports.md) — HTTPTransport、BaseTransport、Transport、MockTransport、SyncByteStream、ByteStream。
-- [Response](./api/response.md) — 迭代器、ResponseHistory、next_request、Cookie 快照与 elapsed()。

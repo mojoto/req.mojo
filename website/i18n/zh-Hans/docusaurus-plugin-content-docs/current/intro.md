@@ -16,8 +16,8 @@ Req 是 Mojo 原生同步 HTTP 客户端，通过轻量原生桥接使用 libcur
 - 请求/响应钩子，可注入 HTTP、模拟或自定义传输层。
 
 从[安装](./getting-started.md)开始，再了解[持久客户端](./clients.md)、
-[HTTP/2 与代理](./networking.md)和[流式响应](./streaming.md)。
-查看 [0.2.0 版本说明](./releases/0.2.0.md)和 [API 参考](./api-reference.md)。
+[HTTP/2](./http2.md)、[代理](./proxies.md)和[流式响应](./streaming.md)。
+[API 参考](./api-reference.md)介绍公开的类型和方法。
 
 ## 默认行为和范围
 

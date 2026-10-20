@@ -354,7 +354,8 @@ cookies: CookieJar
 
 ## Transport configuration and hooks
 
-`proxy`, `trust_env`, `http1`, and `http2` are described in [HTTP/2 and proxies](../networking.md).
+`http1` and `http2` select the [HTTP protocol](../http2.md).
+`proxy` and `trust_env` configure [proxy routing](../proxies.md).
 See [Limits](./limits.md) for pool settings and [uploads](./uploads.md) for `body` and `files`.
 `transport` replaces the built-in transport; see [transports](./transports.md).
 The public `event_hooks: EventHooks` field is described in [event hooks](./hooks.md).

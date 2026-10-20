@@ -119,4 +119,5 @@ for typed failures.
 
 Use `body=RequestBody.from_file(path)` for file uploads, or `files` with `data` for multipart.
 See [uploads](./api/uploads.md) for examples and mutually exclusive body parameters.
-See [network configuration](./networking.md) for proxies/HTTP/2 and [streaming](./streaming.md) for iterators.
+See [proxies](./proxies.md) for routing, [HTTP/2](./http2.md) for protocol selection,
+and [streaming](./streaming.md) for iterators.

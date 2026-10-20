@@ -72,9 +72,3 @@ and the website build directory.
 The Pages workflow validates documentation pull requests. Changes to the website
 on `main` deploy both languages to GitHub Pages through a separate deployment
 job. Configure the repository's Pages source as **GitHub Actions**.
-
-## Preparing the 0.2.0 release
-
-See [RELEASING.md](https://github.com/mojoto/req.mojo/blob/main/RELEASING.md)
-for the release checklist. Preparation builds and validates artifacts without
-creating tags, publishing a Release, or merging community publication changes.
