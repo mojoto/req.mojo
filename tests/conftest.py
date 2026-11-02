@@ -63,6 +63,14 @@ class Handler(BaseHTTPRequestHandler):
     def dispatch(self):
         path = urlsplit(self.path)
         query = parse_qs(path.query, keep_blank_values=True)
+        if path.path in ("/lf-headers", "/mixed-newlines"):
+            newline = b"\n" if path.path == "/lf-headers" else b"\r\n"
+            response = (b"HTTP/1.1 200 OK" + newline +
+                        b"Content-Length: 5\nContent-Type: text/plain" + newline +
+                        b"Connection: close\n\nhello")
+            self.wfile.write(response)
+            self.close_connection = True
+            return
         if path.path == "/stall-upload":
             time.sleep(1)
             self.close_connection = True

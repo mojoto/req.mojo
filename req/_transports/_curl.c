@@ -1,6 +1,7 @@
 /* A pull-based, single-threaded libcurl bridge. Policy lives in Mojo. */
 #include <curl/curl.h>
 #include <limits.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -15,6 +16,14 @@
 #include <zlib.h>
 
 #define MAX_DECODERS 5
+
+static pthread_once_t curl_once = PTHREAD_ONCE_INIT;
+static CURLcode curl_init_result = CURLE_FAILED_INIT;
+
+static void initialize_curl(void) {
+    curl_init_result = curl_global_init(CURL_GLOBAL_DEFAULT);
+    if (curl_init_result == CURLE_OK) atexit(curl_global_cleanup);
+}
 
 typedef struct {
     z_stream stream;
@@ -176,6 +185,7 @@ int64_t req_body_length(void *handle) {
 }
 
 int req_http2_supported(void) {
+    if (pthread_once(&curl_once, initialize_curl) || curl_init_result != CURLE_OK) return 0;
     const curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
     if (!info || !(info->features & CURL_VERSION_HTTP2)) return 0;
     /* Older libcurl offers HTTP/1.1 even in TLS prior-knowledge mode. */
@@ -529,7 +539,8 @@ static size_t on_headers(char *data, size_t size, size_t count, void *context) {
     memcpy(t->headers + t->header_size, data, n);
     t->header_size += n;
     t->headers[t->header_size] = 0;
-    if (n == 2 && data[0] == '\r' && data[1] == '\n') {
+    if ((n == 1 && data[0] == '\n') ||
+        (n == 2 && data[0] == '\r' && data[1] == '\n')) {
         long status = 0;
         curl_easy_getinfo(t->easy, CURLINFO_RESPONSE_CODE, &status);
         if (status >= 200) {
@@ -727,7 +738,7 @@ static void pump(Pool *p) {
     }
     double now = now_seconds();
     for (Transfer *t = p->head; t; t = t->next) {
-        if (t->done || !t->admitted || t->paused || (t->header_ready && !t->receiving)) continue;
+        if (t->done || !t->admitted || (t->header_ready && (t->paused || !t->receiving))) continue;
         double pretransfer = 0;
         curl_easy_getinfo(t->easy, CURLINFO_PRETRANSFER_TIME, &pretransfer);
         if (!t->connected && pretransfer > 0) {
@@ -749,14 +760,9 @@ static void pump(Pool *p) {
 
 void *req_pool_new(size_t max_connections, size_t max_keepalive, double keepalive_expiry,
                    int http1, int http2) {
+    if (pthread_once(&curl_once, initialize_curl) || curl_init_result != CURLE_OK) return NULL;
     if ((!http1 && !http2) || (http2 && !req_http2_supported()) ||
         (!http1 && req_http2_supported() < 2)) return NULL;
-    static int initialized;
-    if (!initialized) {
-        if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) return NULL;
-        atexit(curl_global_cleanup);
-        initialized = 1;
-    }
     Pool *p = calloc(1, sizeof(*p));
     if (!p) return NULL;
     p->multi = curl_multi_init();

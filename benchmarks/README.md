@@ -169,7 +169,7 @@ The native header probe counts buffer reallocations for one status line and
 boundaries:
 
 ```sh
-cc -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -I . \
+cc -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pthread -I . \
   benchmarks/header_allocations.c -lcurl -lz -o build/header-allocations
 build/header-allocations
 ```

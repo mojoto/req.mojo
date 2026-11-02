@@ -18,7 +18,7 @@ pixi install
 make build
 ```
 
-`make build` 生成 `build/req.mojoc` 和原生共享库：
+`make build` 生成 `build/req.mojoc` 和原生共享库，并准备 CPU JSON 模块、许可证、声明及 `SOURCE_COMMIT`：
 Linux 下为 `build/libreq_curl.so`，macOS 下为 `build/libreq_curl.dylib`。
 在仓库根目录运行示例：`pixi run mojo -I . main.mojo`。
 Req 自动从 `build/` 加载共享库，无需添加链接参数。
@@ -40,6 +40,8 @@ make clean
 测试使用本地 HTTP/TLS/HTTP/2 和代理服务，直接从 `tests/**/test_*.mojo` 收集用例。
 `--list` 列出用例，`--only <name>` 选择单项。`build/test-results.json` 记录逐项结果。
 隔离安装检查在仓库外执行预编译消费者的 `mojo run` 和编译后程序，覆盖上传、HTTP/2、代理、钩子、迭代器和原生加载错误。
+编译器仅搜索准备好的包模块和标准库；反向编译检查确保开发环境中的 JSON 不会掩盖归档缺失的模块。
+平台归档的使用方式见仓库中的[归档说明](https://github.com/mojoto/req.mojo/blob/main/ARCHIVE.md)。
 `make test-docs` 编译两种语言中的完整 Mojo 示例，不访问示例外部站点。
 `make build` 构建原生桥接库并预编译包。
 

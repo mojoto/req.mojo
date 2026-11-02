@@ -26,6 +26,8 @@ jobs:
     name: Package (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    outputs:
+      source_commit: ${{ steps.source.outputs.commit }}
     strategy:
       fail-fast: false
       matrix:
@@ -41,8 +43,12 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+
+      - name: Record exact source commit
+        id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -95,6 +101,8 @@ jobs:
           if [[ "${RUNNER_OS}" == "macOS" ]]; then native=build/libreq_curl.dylib; fi
           mkdir -p "build/dist/${archive}"
           cp build/req.mojoc "${native}" LICENSE README.md pixi.toml pixi.lock "build/dist/${archive}/"
+          cp ARCHIVE.md build/SOURCE_COMMIT "build/dist/${archive}/"
+          cp -R build/json build/licenses "build/dist/${archive}/"
           COPYFILE_DISABLE=1 tar -czf "build/dist/${archive}.tar.gz" -C build/dist "${archive}"
 
       - name: Verify extracted release archive
@@ -125,7 +133,14 @@ jobs:
 
       - name: Generate checksums
         working-directory: release-assets
+        env:
+          SOURCE_COMMIT: ${{ needs.build.outputs.source_commit }}
         run: |
+          for archive in *.tar.gz; do
+            commit=$(tar -xOf "$archive" "${archive%.tar.gz}/SOURCE_COMMIT")
+            test "$commit" = "$SOURCE_COMMIT"
+          done
+          echo "$SOURCE_COMMIT" > SOURCE_COMMIT
           sha256sum *.tar.gz > SHA256SUMS
           sha256sum -c SHA256SUMS
 

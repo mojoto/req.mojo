@@ -27,15 +27,17 @@ native: build/libreq_curl.$(NATIVE_EXT)
 
 build/libreq_curl.$(NATIVE_EXT): req/_transports/_curl.c
 	mkdir -p build
-	$(CC) $(CFLAGS) -fPIC $(NATIVE_FLAGS) $< -lcurl -lz -o $@
+	$(CC) $(CFLAGS) -pthread -fPIC $(NATIVE_FLAGS) $< -lcurl -lz -o $@
 
 test-deps:
 	$(PYTHON) -m ensurepip
 	$(PYTHON) -m pip install -r tests/requirements.txt
 
 test-native: native
-	$(CC) $(CFLAGS) tests/native/connection_endpoints.c -lcurl -lz -o build/connection-endpoints
+	$(CC) $(CFLAGS) -pthread tests/native/connection_endpoints.c -lcurl -lz -o build/connection-endpoints
 	build/connection-endpoints
+	$(CC) $(CFLAGS) -pthread tests/native/global_init.c -lcurl -lz -o build/global-init
+	build/global-init
 
 test: test-native
 	REQ_MOJO="$(MOJO)" REQ_MOJO_FLAGS="$(MOJO_FLAGS)" $(PYTHON) tests/run_tests.py $(TEST_ARGS)
@@ -43,6 +45,7 @@ test: test-native
 build: native
 	mkdir -p build
 	$(MOJO) precompile $(MOJO_FLAGS) req -o build/req.mojoc
+	$(PYTHON) scripts/package_dependencies.py
 
 test-package: build
 	$(PYTHON) tests/test_package.py

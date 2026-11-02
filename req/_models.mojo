@@ -187,7 +187,7 @@ struct Response(Movable):
     def from_stream(
         var source: CurlStream, request: Request
     ) raises HTTPError -> Self:
-        var lines = source.headers().split("\r\n")
+        var lines = source.headers().replace("\r\n", "\n").split("\n")
         var status = lines[0].split(" ", maxsplit=2)
         if len(status) < 2:
             raise HTTPError(

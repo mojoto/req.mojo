@@ -21,6 +21,7 @@ make build
 
 `make build` creates `build/req.mojoc` and the native shared library
 `build/libreq_curl.so` on Linux or `build/libreq_curl.dylib` on macOS.
+It also stages CPU JSON modules, their license/notices, and `SOURCE_COMMIT`.
 From the repository root, run an example with `pixi run mojo -I . main.mojo`.
 Req finds the shared library in `build/`; no linker flags are needed.
 For a binary launched from another directory, set `REQ_NATIVE_LIB` to the
@@ -45,6 +46,11 @@ selects one. `build/test-results.json` records individual outcomes.
 Isolated package checks run precompiled consumers outside the checkout with
 both `mojo run` and compiled execution, covering uploads, HTTP/2, proxies,
 hooks, iterators, and native loading errors.
+The compiler searches only the staged package modules and standard library;
+a negative compile verifies that a missing JSON module cannot be supplied by
+the development environment. See the repository's
+[archive instructions](https://github.com/mojoto/req.mojo/blob/main/ARCHIVE.md)
+for using a platform release archive.
 `make test-docs` compiles complete examples in both locales without contacting
 the examples' external sites. `make build` builds the native bridge and package.
 
