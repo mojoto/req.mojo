@@ -171,7 +171,7 @@ def main():
     for name in ['run.py', 'client.mojo', 'threads.c', 'server.go']:
         shutil.copy2(ROOT / 'benchmarks' / name, output / name)
     cc = os.environ.get('CC', 'cc')
-    flags = ['-O2', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror']
+    flags = ['-O2', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror', '-pthread']
     run([cc, *flags, '-c', str(output / 'threads.c'), '-o', str(output / 'threads.o')])
     native_libraries = {}
     for variant in ['baseline', 'current']:

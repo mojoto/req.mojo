@@ -4,6 +4,15 @@ from std.os import getenv
 from std.testing import assert_equal, assert_true
 
 
+def test_lf_and_mixed_response_headers_do_not_stall() raises:
+    var client = Client(base_url=getenv("REQ_TEST_URL"), timeout=Timeout(0.2))
+    for path in ["/lf-headers", "/mixed-newlines"]:
+        var response = client.get(path)
+        assert_equal(response.status_code, 200)
+        assert_equal(response.headers["Content-Type"], "text/plain")
+        assert_equal(response.text(), "hello")
+
+
 def test_send_timeout_override() raises:
     var client = Client(
         base_url=getenv("REQ_TEST_URL"),

@@ -66,6 +66,10 @@ def main() raises:
         raise Error("Expected a native library loading error")
 
     var url = getenv("REQ_TEST_URL")
+    for path in ["/lf-headers", "/mixed-newlines"]:
+        assert_equal(
+            req.get(url + path, timeout=req.Timeout(0.2)).text(), "hello"
+        )
     var redirected = req.get(
         url + "/redirect-chain?count=2", follow_redirects=True
     )

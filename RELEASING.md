@@ -19,7 +19,11 @@ GitHub Release until the release is explicitly authorized.
    commit. Each package job runs tests, precompiles the module, verifies isolated
    consumers, and repeats consumer tests after extracting its archive.
    The `release-bundle` CI artifact contains three `.tar.gz` archives and a
-   verified `SHA256SUMS`. A branch/PR build skips the publishing job.
+   verified `SHA256SUMS` and `SOURCE_COMMIT`. Each archive includes the CPU JSON
+   modules and their license/notices; consumer tests restrict the compiler's
+   import path so a development dependency cannot mask a missing module.
+   Package PR jobs check out the PR head commit rather than a merge preview.
+   A branch/PR build skips the publishing job.
 5. For another preparation build, dispatch `build.yml` on the preparation branch
    **without** a `tag` input. Never dispatch `pages.yml` for a preparation branch:
    its manual trigger deploys the website.
