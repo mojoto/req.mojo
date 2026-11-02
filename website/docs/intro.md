@@ -4,8 +4,7 @@ title: Introduction
 
 # Req.mojo
 
-Req is a native synchronous HTTP client for Mojo, using libcurl through a small
-native transport bridge.
+A simple, native HTTP client for Mojo.
 
 - HTTP/1.1 and opt-in HTTP/2, with verified HTTPS.
 - Persistent connections, pool limits, and scoped cookies.

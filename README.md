@@ -4,7 +4,7 @@
 
 # Req.mojo
 
-A synchronous HTTP client for Mojo.
+A simple, native HTTP client for Mojo.
 
 <p align="center">
   <a href="https://github.com/mojoto/req.mojo/actions/workflows/test.yml">
