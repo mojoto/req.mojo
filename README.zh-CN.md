@@ -4,7 +4,7 @@
 
 # Req.mojo
 
-面向 Mojo 的同步 HTTP 客户端。
+简洁的 Mojo 原生 HTTP 客户端。
 
 <p align="center">
   <a href="https://github.com/mojoto/req.mojo/actions/workflows/test.yml">

@@ -8,7 +8,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 const copy = {
   en: {
     title: 'Make HTTP requests', accent: 'the Mojo way.',
-    description: 'A native synchronous HTTP client. From a simple GET to persistent sessions and streaming responses — with an API that stays out of your way.',
+    description: 'A simple, native HTTP client for Mojo.',
     start: 'Get started', api: 'Explore the API',
     caption: 'HTTP/1.1 + HTTP/2 · Verified HTTPS · Multipart',
     tabs: ['First request', 'Persistent client', 'Streaming'],
@@ -26,7 +26,7 @@ const copy = {
   },
   'zh-Hans': {
     title: '用 Mojo，', accent: '轻松发起 HTTP 请求。',
-    description: '原生同步 HTTP 客户端。从简单的 GET，到持久会话和流式响应，用清晰的 API 连接你的应用与网络。',
+    description: '简洁的 Mojo 原生 HTTP 客户端。',
     start: '快速开始', api: '查看 API',
     caption: 'HTTP/1.1 + HTTP/2 · HTTPS 证书验证 · Multipart',
     tabs: ['第一个请求', '持久客户端', '流式响应'],

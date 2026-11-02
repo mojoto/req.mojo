@@ -4,7 +4,7 @@ title: 简介
 
 # Req.mojo
 
-Req 是 Mojo 原生同步 HTTP 客户端，通过轻量原生桥接使用 libcurl。
+简洁的 Mojo 原生 HTTP 客户端。
 
 - HTTP/1.1 与可选 HTTP/2，默认验证 HTTPS 证书。
 - 持久连接、连接池限制和有作用域的 Cookie。

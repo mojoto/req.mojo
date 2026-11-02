@@ -5,7 +5,7 @@ const {themes} = require('prism-react-renderer');
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Req.mojo',
-  tagline: 'A native synchronous HTTP client for Mojo',
+  tagline: 'A simple, native HTTP client for Mojo.',
   favicon: 'img/req-logo.svg',
 
   url: 'https://mojoto.github.io',
